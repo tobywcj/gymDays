@@ -1,0 +1,17 @@
+{
+  "name": "gymdays-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tooling root for gymDays — Supabase CLI and shared scripts.",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "supabase": "^2.100.0"
+  },
+  "scripts": {
+    "db:push": "bash scripts/db-push.sh",
+    "db:reset:local": "supabase/run-tests.sh",
+    "db:link": "supabase link"
+  }
+}

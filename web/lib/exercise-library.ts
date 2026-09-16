@@ -1,0 +1,876 @@
+// ============================================================================
+// AASFP exercise catalog — AUTHORING SOURCE for the unified exercise_db.
+//
+// This file is the editable, type-checked source of the rich exercise content
+// drawn from the two AASFP handouts (APTHK03 resistance-training principles &
+// APTHK04 advanced variations). It is NOT imported at app runtime — the app and
+// the AI agents read the DB. It exists to (a) define the shared row types used
+// by the Programme UI and (b) generate the seed migration
+// (0028_exercise_db_aasfp_seed.sql) via scripts/gen-exercise-seed.ts.
+//
+// Single source of truth at runtime = the exercise_db table. Keep `muscleGroup`
+// within the planner's existing vocabulary (chest/back/legs/core/shoulders/arms)
+// so search_exercise_db + test_planner.py keep working; richness lives in the
+// muscle-region arrays + jsonb columns added by 0027.
+// ============================================================================
+
+export type Lang = { en: string; zh: string };
+
+// Fine-grained muscle regions used to colour the anatomical MuscleMap. Keep in
+// sync with the <path> ids in components/programme/MuscleMap.tsx.
+export type MuscleRegion =
+  | "chest"
+  | "front-delts"
+  | "side-delts"
+  | "rear-delts"
+  | "biceps"
+  | "triceps"
+  | "forearms"
+  | "lats"
+  | "traps"
+  | "rhomboids"
+  | "erectors"
+  | "abs"
+  | "obliques"
+  | "quads"
+  | "hamstrings"
+  | "glutes"
+  | "calves";
+
+export type Level = "beginner" | "intermediate" | "advanced";
+
+// The AASFP "6 key points" (APTHK03 p.19–20).
+export type KeyPoints = {
+  bodyPosition: Lang;
+  stabilization: Lang;
+  pathOfMotion: Lang;
+  rangeOfMotion: Lang;
+  breathing: Lang;
+  rhythm: Lang;
+};
+
+export type Variation = {
+  name: Lang;
+  level: Level;
+  equipment: string[];
+  note?: Lang;
+};
+
+// Authoring shape for one catalog entry. Maps 1:1 to an exercise_db row.
+export type ExerciseSeed = {
+  // `name` is the canonical English name + the DB unique key.
+  name: string;
+  nameZh: string;
+  muscleGroup: string;           // planner vocabulary: chest|back|legs|core|shoulders|arms
+  equipment: string;             // primary equipment (planner filter)
+  equipmentOptions: string[];
+  level: Level;
+  difficulty: number;            // 1–4, aligns with `level`
+  primaryMuscles: MuscleRegion[];
+  secondaryMuscles: MuscleRegion[];
+  cues: string;                  // short English coaching cue (legacy column)
+  tempo: string;                 // e.g. "4-4", "3-3"
+  keyPoints: KeyPoints;
+  progression: Lang;
+  regression: Lang;
+  commonFaults: Lang[];
+  variations: Variation[];
+  citation: { doc: "APTHK03" | "APTHK04"; page: number };
+};
+
+// Runtime row shape (what the Programme pages read back from exercise_db).
+export type ExerciseRow = {
+  id: string;
+  name: string;
+  name_zh: string | null;
+  muscle_group: string | null;
+  primary_muscles: MuscleRegion[];
+  secondary_muscles: MuscleRegion[];
+  equipment: string | null;
+  equipment_options: string[];
+  level: Level | null;
+  tempo: string | null;
+  key_points: KeyPoints | null;
+  progression: Lang | null;
+  regression: Lang | null;
+  common_faults: Lang[];
+  variations: Variation[];
+  citation: { doc: string; page: number } | null;
+  source: string;
+  // AFT Enhancement System category (APTHK10) — drives the colour-level filter.
+  aft_level: AftLevel | null;
+  // AI-generated anatomical illustration of the movement (exercise_db column
+  // illustration_url, populated by scripts/gen-exercise-illustrations.mjs).
+  illustrationUrl?: string | null;
+  // UI-only: demonstration photo resolved server-side from free-exercise-db
+  // (see lib/exercise-images.ts). Absent on the raw DB row.
+  imageUrl?: string | null;
+  imageUrlAlt?: string | null;
+};
+
+// ── AFT Enhancement System (APTHK10) ────────────────────────────────────────
+// The AASFP "All-round Fitness Training" 5-level client-classification system.
+// Used both to categorise exercises (exercise_db.aft_level) and to label where
+// a client currently sits (clients.aft_level). Lowest → highest readiness.
+export type AftLevel = "blue" | "green" | "yellow" | "orange" | "red";
+
+export const AFT_LEVELS: {
+  key: AftLevel;
+  color: string;
+  label: Lang;
+  who: Lang;
+  blurb: Lang;
+}[] = [
+  {
+    key: "blue",
+    color: "#3b82f6",
+    label: { en: "Blue", zh: "藍級" },
+    who: { en: "Dysfunctional / deconditioned", zh: "失調或體弱人士" },
+    blurb: {
+      en: "Weak, recently injured, or poor movement patterns. Corrective, very stable, basic-quality work to rebuild mobility, stability and confidence.",
+      zh: "體弱、剛受傷或動作模式不良。以矯正、穩定及基礎質量訓練為主，重建靈活、穩定及自信。",
+    },
+  },
+  {
+    key: "green",
+    color: "#22c55e",
+    label: { en: "Green", zh: "綠級" },
+    who: { en: "Prepared individuals", zh: "已裝備人士" },
+    blurb: {
+      en: "Beginners (<3 mo) or returning, no pain or major dysfunction. Low-risk general aerobic & basic resistance training; learn movement control.",
+      zh: "初學者（少於3個月）或重新開始，沒有疼痛或明顯失調。低風險的一般有氧及基礎阻力訓練，學習動作控制。",
+    },
+  },
+  {
+    key: "yellow",
+    color: "#eab308",
+    label: { en: "Yellow", zh: "黃級" },
+    who: { en: "Active / recreational athletes", zh: "活躍人士／業餘運動員" },
+    blurb: {
+      en: "Trained >3 mo, regular exercise, decent endurance. Higher skill & complexity, hypertrophy and high-intensity (HIIT) work.",
+      zh: "已訓練超過3個月，定期運動，有一定耐力。可進行更高技巧及複雜度、肌肥大及高強度（HIIT）訓練。",
+    },
+  },
+  {
+    key: "orange",
+    color: "#f97316",
+    label: { en: "Orange", zh: "橙級" },
+    who: { en: "Trained athletes", zh: "受訓練運動員" },
+    blurb: {
+      en: "≥2 yrs systematic training, no long detraining. Max strength/power, complex & unstable drills, periodisation.",
+      zh: "至少2年系統訓練，沒有長期停練。最大肌力／爆發力、複雜及不穩定動作、週期化訓練。",
+    },
+  },
+  {
+    key: "red",
+    color: "#ef4444",
+    label: { en: "Red", zh: "紅級" },
+    who: { en: "Elite / pro athletes", zh: "精英／專業運動員" },
+    blurb: {
+      en: "National team, top leagues, world ranking. Sport-specific, highest complexity, rigorous monitoring.",
+      zh: "國家隊、頂級聯賽、世界排名。專項、最高複雜度、嚴格監控。",
+    },
+  },
+];
+
+export const AFT_BY_KEY: Record<AftLevel, (typeof AFT_LEVELS)[number]> = Object.fromEntries(
+  AFT_LEVELS.map((l) => [l.key, l]),
+) as Record<AftLevel, (typeof AFT_LEVELS)[number]>;
+
+// Friendly group ordering + bilingual labels for the Programme UI.
+export const GROUPS: { key: string; label: Lang }[] = [
+  { key: "chest", label: { en: "Chest", zh: "胸大肌" } },
+  { key: "back", label: { en: "Back", zh: "背部肌群" } },
+  { key: "legs", label: { en: "Lower Limbs", zh: "下肢肌群" } },
+  { key: "core", label: { en: "Abdominals", zh: "腹部肌群" } },
+  { key: "shoulders", label: { en: "Shoulders", zh: "肩部肌群" } },
+  { key: "arms", label: { en: "Arms", zh: "手臂肌群" } },
+];
+
+// The standard 4-4 breathing line reused by most resistance moves.
+const BREATH_UP_EXHALE: Lang = { en: "Exhale on the way up (concentric); inhale on the way down (eccentric).", zh: "向上呼氣（向心收縮）；向下吸氣（離心收縮）。" };
+const TEMPO_44: Lang = { en: "4 counts up; 4 counts down (4-4).", zh: "4 拍向上；4 拍向下（4-4 拍）。" };
+const TEMPO_33: Lang = { en: "3 counts up; 3 counts down (3-3).", zh: "3 拍向上；3 拍向下（3-3 拍）。" };
+const STAB_STD: Lang = { en: "Depress + retract the shoulder girdle; brace the transverse abdominis; tuck the chin.", zh: "肩帶下壓縮回；收緊腹橫肌；下巴微收。" };
+
+export const AASFP_EXERCISES: ExerciseSeed[] = [
+  // ─────────────────────────── CHEST (胸大肌) ───────────────────────────
+  {
+    name: "Dumbbell Bench Press", nameZh: "啞鈴平板臥推",
+    muscleGroup: "chest", equipment: "dumbbell", equipmentOptions: ["dumbbell"],
+    level: "intermediate", difficulty: 3,
+    primaryMuscles: ["chest", "front-delts"], secondaryMuscles: ["triceps"],
+    cues: "Elbows ~90°, dumbbells over mid-chest, wrists neutral.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Lie supine on a flat bench, feet flat slightly wider than shoulders; small gap under the lower back. Arms open with elbows ~90° so the dumbbells track over the mid-chest near nipple line, palms facing toward the feet, wrists neutral.", zh: "平臥於板凳上，雙腳平放略闊於肩；腰部留空約一手掌厚度。雙臂打開，肘關節成 90° 使啞鈴與前臂與胸部近乳線平行，掌心向下肢方向，手腕中立。" },
+      stabilization: STAB_STD,
+      pathOfMotion: { en: "Press the dumbbells in a vertical arc from mid-chest up and slightly together along a semicircular path; roughly along the horizontal plane.", zh: "保持啞鈴約胸中部垂直路線由下向胸正上方推起呈弧線及半圓軌跡；大約沿水平面。" },
+      rangeOfMotion: { en: "Arms straight or slightly bent at top — no lockout/hyperextension; lower until elbows reach ~90° (beginner) or to bench level (advanced).", zh: "推起時手臂伸直或微曲，不要超伸；還原時初學者肘回到約 90°，進階人士可肘達平板水平位置。" },
+      breathing: BREATH_UP_EXHALE,
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Press the dumbbells slightly toward the shoulders so at full extension they sit over the upper chest; increase ROM to bench level.", zh: "啞鈴向上推起時略移向靠近肩關節位置，手臂伸直時啞鈴於上胸的上方；還原幅度可達平板水平。" },
+    regression: { en: "Shorten the range — stop the lowering at ~90° elbow flexion; use lighter dumbbells.", zh: "縮短幅度，還原時肘只回到 90° 屈曲；使用較輕啞鈴。" },
+    commonFaults: [{ en: "Wrists bending back under load.", zh: "負重時手腕後翻。" }, { en: "Bouncing the weight off the chest.", zh: "啞鈴在胸口反彈借力。" }],
+    variations: [
+      { name: { en: "Dumbbell chest press on exercise ball", zh: "仰臥健身球啞鈴推胸" }, level: "intermediate", equipment: ["dumbbell", "fitball"], note: { en: "Unstable surface adds core demand.", zh: "不穩定平面增加核心需求。" } },
+      { name: { en: "Exercise ball dumbbell fly", zh: "健身球啞鈴飛鳥" }, level: "intermediate", equipment: ["dumbbell", "fitball"] },
+      { name: { en: "Dumbbell pull over", zh: "啞鈴曲/直臂上拉" }, level: "intermediate", equipment: ["dumbbell"] },
+      { name: { en: "Fitball push up", zh: "健身球掌上壓" }, level: "beginner", equipment: ["fitball", "bodyweight"] },
+    ],
+    citation: { doc: "APTHK03", page: 23 },
+  },
+  {
+    name: "Barbell Bench Press", nameZh: "槓鈴平板臥推",
+    muscleGroup: "chest", equipment: "barbell", equipmentOptions: ["barbell"],
+    level: "intermediate", difficulty: 3,
+    primaryMuscles: ["chest", "front-delts"], secondaryMuscles: ["triceps"],
+    cues: "Bar to mid-chest, scapulae retracted, neutral wrists.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Sit then lie back on a flat bench, feet flat slightly wider than shoulders, small gap under the lower back; arms open with elbows ~90°, find grip width with neutral wrists, unrack the bar and set up.", zh: "坐於板凳上，從一側躺下，雙腳平放略闊於肩；腰部留空一手掌厚度；雙臂打開肘關節成 90°，手向上在槓鈴上找到握距，手腕中立；拿槓鈴離架，作好準備。" },
+      stabilization: STAB_STD,
+      pathOfMotion: { en: "Keep the bar moving vertically over the mid-chest, roughly along the horizontal plane.", zh: "保持槓鈴約胸中部垂直地上下活動；大約沿水平面。" },
+      rangeOfMotion: { en: "Arms straight or slightly bent at top, no hyperextension; lower until elbows reach ~90° (beginner) or the bar touches the chest (advanced).", zh: "推起時手臂伸直或微曲，不要超伸；還原時初學者手肘回到 90 度，進階可觸及胸部。" },
+      breathing: BREATH_UP_EXHALE,
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Arc the bar slightly toward the shoulders so at lockout it sits over the upper chest near the clavicle line.", zh: "槓鈴於胸中部位置以弧線軌跡舉起，向上時略移向靠近肩關節位置，手臂伸直時槓鈴於上胸近鎖骨位的上方。" },
+    regression: { en: "Stop at ~90° elbow flexion; lighter load; use a spotter.", zh: "肘只回到 90 度；使用較輕重量；有人保護。" },
+    commonFaults: [{ en: "Bar drifting toward the neck.", zh: "槓鈴偏向頸部。" }, { en: "Hips lifting off the bench.", zh: "臀部離開板凳。" }],
+    variations: [
+      { name: { en: "Smith machine incline chest press", zh: "史密夫機斜板推舉" }, level: "intermediate", equipment: ["machine"] },
+    ],
+    citation: { doc: "APTHK03", page: 25 },
+  },
+  {
+    name: "Cable Cross Over / Fly", nameZh: "鋼線十字夾胸/飛鳥",
+    muscleGroup: "chest", equipment: "cable", equipmentOptions: ["cable", "band"],
+    level: "intermediate", difficulty: 2,
+    primaryMuscles: ["chest", "front-delts"], secondaryMuscles: [],
+    cues: "Elbows ~30° fixed, squeeze across the chest in an arc.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Set the handles for the target region (low chest: above shoulder/head height; mid: at nipple line; upper: below nipple to waist). Take one handle then the other, open the arms with ~30° elbow bend, split stance, torso vertical or slightly forward.", zh: "將合適手柄調較至下胸：高於肩膀至頭頂；中胸：和乳線水平；上胸：低於乳線至腰。先取一邊再取另一邊，緩緩張開雙手至肘屈約 30 度，前後腳站立，上身垂直或輕微前傾。" },
+      stabilization: { en: "Depress + slightly retract the shoulder girdle; brace the abdominals; chin tucked, eyes forward.", zh: "肩帶下壓及微微縮回；收緊腹橫肌部；下巴微收並眼望前方。" },
+      pathOfMotion: { en: "With cable and forearm parallel, sweep the handles together along an arc/semicircle toward the target line; keep the elbow angle unchanged throughout.", zh: "將鋼線和前臂平行狀態下，沿弧線及畫半圓方式夾出至目標線；所有方向皆保持肘部微曲並沒有角度改變。" },
+      rangeOfMotion: { en: "Beginner: bring slightly narrower than shoulders, return to arms level with the body. Advanced: hands lightly touch, arms travel slightly behind the body.", zh: "初學：夾出至略比肩窄，還原至手臂與身體同一水平。進階：夾出至雙手微微相互觸碰，還原時手臂微微後於身體。" },
+      breathing: { en: "Exhale as you sweep in (concentric); inhale as you return (eccentric).", zh: "向前呼氣（向心收縮）；向後吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Hands touch at the finish, arms travel slightly behind the body for a deeper stretch (mobility permitting).", zh: "夾出至雙手相觸，還原時手臂微微後於身體（視乎柔韌性及能力）。" },
+    regression: { en: "Shorter sweep to just narrower than shoulders; lighter resistance.", zh: "幅度縮至略比肩窄；較輕阻力。" },
+    commonFaults: [{ en: "Elbow angle opening/closing (turning it into a press).", zh: "肘角度改變（變成推舉）。" }],
+    variations: [
+      { name: { en: "Standing cable reverse fly", zh: "站姿鋼線反向飛鳥" }, level: "intermediate", equipment: ["cable"] },
+    ],
+    citation: { doc: "APTHK03", page: 27 },
+  },
+  {
+    name: "Suspension Strap Push Up", nameZh: "懸掛帶掌上壓",
+    muscleGroup: "chest", equipment: "suspension", equipmentOptions: ["suspension"],
+    level: "intermediate", difficulty: 3,
+    primaryMuscles: ["chest", "front-delts"], secondaryMuscles: ["triceps", "abs"],
+    cues: "Ear-shoulder-hip-knee-ankle in one line; forearms parallel to straps.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Anchor the straps and check stability. Set handle height to ability (beginner: thigh/knee height; advanced: ~a palm off the floor). Grip handles, arms straight, walk feet forward to incline the body; weight on the handles, hands slightly wider than shoulders, wrists neutral.", zh: "將懸掛帶繫於穩固支架上並檢查穩固程度，按個人能力將手柄調較，初學者大腿至膝蓋高度，進階及高水平可調低至離地約一掌距離；雙手握實手柄，向前伸直手臂，慢慢雙腳向前直至懸掛帶完全拉直，再將身體重量放於手柄上由手臂支撐，手腕中立，手柄略比肩闊。" },
+      stabilization: { en: "Depress the shoulder girdle; brace abs + glutes; chin tucked; keep ear–shoulder–hip–knee–ankle in one line.", zh: "肩帶下壓；收緊腹橫肌及臀部；下巴微收並眼望向前下方；使耳肩髖膝踝五點成一直線。" },
+      pathOfMotion: { en: "Lower the body toward the straps keeping forearms parallel to the straps, then press back along the same path.", zh: "向懸掛帶方向下降身體，保持前臂與懸掛帶平行，然後將身體向原來路線推起。" },
+      rangeOfMotion: { en: "Beginner: lower to ~90° elbow; advanced: to handles at chest level; press up to straight or slightly bent — no hyperextension.", zh: "初學：下降至肘呈 90 度屈曲，進階可下降至手柄與胸部水平；向上推起至手臂伸直或保持微曲，不要有超伸。" },
+      breathing: BREATH_UP_EXHALE,
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Lower the handle height (more horizontal body angle); on the press fan the handles out then squeeze them together.", zh: "調低手柄（身體更接近水平）；下降時手柄向外張開，推起時將手柄夾向中間。" },
+    regression: { en: "Raise the handle height for a more upright body angle (30°/45°).", zh: "調高手柄使身體傾斜角度更直（30 度或 45 度）。" },
+    commonFaults: [{ en: "Hips sagging / piking.", zh: "臀部下塌或拱起。" }, { en: "Shoulders shrugging up.", zh: "聳肩。" }],
+    variations: [],
+    citation: { doc: "APTHK03", page: 29 },
+  },
+
+  // ─────────────────────────── BACK (背部肌群) ───────────────────────────
+  {
+    name: "Barbell Bent Over Row", nameZh: "槓鈴俯身窄手划船",
+    muscleGroup: "back", equipment: "barbell", equipmentOptions: ["barbell"],
+    level: "intermediate", difficulty: 3,
+    primaryMuscles: ["lats", "rhomboids", "traps", "rear-delts"], secondaryMuscles: ["biceps", "erectors"],
+    cues: "Hinge 60–90°, elbows back, forearms vertical.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Bar on the floor in front of the shins; grip shoulder-width with a pronated grip; soft knees, hinge the torso forward 60–90° (beginner 60°), back flat, draw the bar to the front of the shins.", zh: "預備槓鈴於小腿前方地上位置，握槓時雙手與肩同闊位置及前臂旋前方式緊握槓鈴，將膝關節微微屈曲並上半身軀幹前傾 60-90 度（初學 60 度），腰背挺直，雙手將槓鈴拉貼至脛骨前方。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; keep the spine straight, chin tucked, eyes down-forward.", zh: "肩帶下壓及縮回；收緊腹橫肌部；保持脊椎挺直，下巴微收並眼望前下方。" },
+      pathOfMotion: { en: "With narrow elbows tucked to the body, pull the bar up the shin toward the navel, elbows pointing back, forearms staying vertical to the floor.", zh: "以窄手肘部及手臂緊貼身體方式，將槓鈴沿小腿脛骨向肚臍方向向上提起，保持肘指向身體後方，動作過程保持前臂垂直指向地面。" },
+      rangeOfMotion: { en: "Beginner to ~90° elbow flexion (advanced until the elbow passes the body); lower until the elbow is nearly straight at the shins.", zh: "初學為肘屈曲 90 度（或進階直至肘部超越身體並無法繼續為止），還原時至肘微微屈曲於脛骨前方幾乎伸直狀態。" },
+      breathing: { en: "Exhale as you row up (concentric); inhale on the lowering (eccentric).", zh: "向後拉時呼氣（向心收縮）；向下還原時吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Increase the hinge angle and pull until the elbows pass the torso.", zh: "增加俯身角度，拉至肘部超越軀幹。" },
+    regression: { en: "Reduce hinge to ~60°; stop at 90° elbow; lighter load.", zh: "俯身減至約 60 度；肘只到 90 度；較輕重量。" },
+    commonFaults: [{ en: "Rounding the lower back.", zh: "寒背 / 圓背。" }, { en: "Jerking with the lower back.", zh: "用腰背借力。" }],
+    variations: [
+      { name: { en: "Cable / band straight arm pulldown", zh: "鋼線/橡皮帶直臂下拉" }, level: "beginner", equipment: ["cable", "band"] },
+      { name: { en: "Cable / band straight arm rowing", zh: "鋼線/橡皮帶直臂划船" }, level: "beginner", equipment: ["cable", "band"] },
+      { name: { en: "Dumbbell plank row", zh: "啞鈴平板支撐划船" }, level: "advanced", equipment: ["dumbbell"] },
+      { name: { en: "Single leg single arm cable / band row", zh: "單腳單臂鋼線/橡皮帶划船" }, level: "advanced", equipment: ["cable", "band"] },
+    ],
+    citation: { doc: "APTHK03", page: 31 },
+  },
+  {
+    name: "Band Assisted Pull Up", nameZh: "橡皮帶輔助引體上升",
+    muscleGroup: "back", equipment: "band", equipmentOptions: ["band", "bodyweight"],
+    level: "intermediate", difficulty: 3,
+    primaryMuscles: ["lats", "biceps"], secondaryMuscles: ["forearms", "rhomboids"],
+    cues: "Wide grip, pull chin over bar, no swing.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Prepare a band of suitable resistance, check for damage, anchor it on the bar (or Smith/assist machine); loop the band under the feet (or under the knees/shins for the kneeling version). Grip wide (90° shoulder abduction then extend up).", zh: "預備合適阻力及數量的粗橡皮帶，檢查橡皮帶有否破損，並穩固繫於橫杠上（或史密夫架/輔助引體器械），並將橡皮帶拉長放於腳底（或屈膝版本時膝蓋及脛骨下方），雙手以闊手方式握杠。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; keep the spine straight (or slightly leaning back), chin tucked, eyes forward.", zh: "肩帶下壓及縮回；收緊腹橫肌部；保持脊椎挺直（或可微微向後傾），下巴微收並眼望前方。" },
+      pathOfMotion: { en: "Pull the body straight up; the bar passes in front of the face.", zh: "身體向上垂直拉起，橫杠應在面部前方經過。" },
+      rangeOfMotion: { en: "Pull until ~90° elbow (beginner) or chin above the bar (advanced); lower until the elbow is slightly bent with no hyperextension.", zh: "向上拉至肘屈曲 90 度（初學）或進階至下巴高於橫杠為止，下放時至肘微曲而沒有超伸。" },
+      breathing: { en: "Exhale on the way up (concentric); inhale on the lowering (eccentric).", zh: "向上拉時呼氣（向心收縮）；向下還原時吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Use a lighter band (less assistance) or progress toward unassisted pull-ups; chin above the bar.", zh: "使用較輕橡皮帶（更少輔助）或進階至無輔助引體上升；下巴高於橫杠。" },
+    regression: { en: "Use a thicker band (more assistance) or the kneeling version.", zh: "使用較粗橡皮帶（更多輔助）或屈膝版本。" },
+    commonFaults: [{ en: "Kipping / swinging.", zh: "擺盪借力。" }, { en: "Behind-the-neck pulling.", zh: "頸後下拉。" }],
+    variations: [
+      { name: { en: "Lat pull down (machine)", zh: "頸前下拉" }, level: "beginner", equipment: ["machine"] },
+    ],
+    citation: { doc: "APTHK03", page: 33 },
+  },
+  {
+    name: "Fitball Back Extension", nameZh: "健身球背伸展",
+    muscleGroup: "back", equipment: "fitball", equipmentOptions: ["fitball"],
+    level: "beginner", difficulty: 2,
+    primaryMuscles: ["erectors"], secondaryMuscles: ["glutes"],
+    cues: "Roll the spine down then extend segment by segment, no hyperextension.",
+    tempo: "3-3",
+    keyPoints: {
+      bodyPosition: { en: "Place the ball against a wall / ankle-anchor. Hook the feet at the wall base, ball under the abdomen; hands support the ball, then slowly straighten the knees so the ball sits under the lower abdomen/pelvis; spine straight, hands crossed on chest (advanced: by the ears/behind head).", zh: "預備健身球於牆面或能穩定足踝支撐架前方，將腳穩固在牆腳或支撐架下方，健身球於腹部，雙手扶著健身球然後緩緩將膝關節伸直使健身球置於下腹骨盆位置，身體固定預備好後，保持脊椎伸直，雙手於胸前交叉（或進階至手放耳旁/頭後）。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; keep the spine straight, chin tucked, eyes up-forward.", zh: "肩帶下壓及縮回；收緊腹橫肌部；保持脊椎挺直，下巴微收並眼望前上方。" },
+      pathOfMotion: { en: "With the pelvis + lower back fixed on the ball, roll the lumbar then thoracic spine down segment by segment, then extend up slowly segment by segment.", zh: "骨盆及下背身固定情況下，將骨盆以上腰椎及胸椎部位逐節緩緩捲下，向上時緩緩逐節伸直。" },
+      rangeOfMotion: { en: "Down until the chest rests on the ball, body near parallel to the floor (chin ~a fist off the ball); up until the thoraco-lumbar spine is nearly in a straight line with no hyperextension / head tipping back.", zh: "向下至胸部全靠於健身球上使身體接近與地面平行，此時下巴與健身球約有一拳頭位置，向上時直至胸腰椎伸直近成一直線而沒有超伸或頭部後傾。" },
+      breathing: { en: "Exhale as you rise (concentric); inhale on the lowering (eccentric).", zh: "向上升起時呼氣（向心收縮）；向下還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_33,
+    },
+    progression: { en: "Hands by the ears / behind the head to lengthen the lever.", zh: "雙手放耳旁或頭後以增加力臂。" },
+    regression: { en: "Hands crossed on the chest; smaller range.", zh: "雙手胸前交叉；較小幅度。" },
+    commonFaults: [{ en: "Hyperextending the lumbar spine at the top.", zh: "頂端腰椎超伸。" }, { en: "Pulling the neck with the hands.", zh: "雙手拉頸。" }],
+    variations: [
+      { name: { en: "Roman chair back extension", zh: "羅馬椅背伸展" }, level: "intermediate", equipment: ["machine"] },
+    ],
+    citation: { doc: "APTHK03", page: 35 },
+  },
+  {
+    name: "Suspension Strap Standing Wide Grip Row", nameZh: "懸掛帶站姿闊手划船",
+    muscleGroup: "back", equipment: "suspension", equipmentOptions: ["suspension"],
+    level: "beginner", difficulty: 2,
+    primaryMuscles: ["rear-delts", "traps", "rhomboids"], secondaryMuscles: ["forearms", "biceps"],
+    cues: "Lean back 45–60°, pull elbows out, forearms in line with straps.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Set the handles to ~waist/thigh height, grip both handles, arms straight with handles level with the chest, shift weight back; walk the feet forward to incline ~45–60° (beginner 45°), legs straight and stable; at the start the arms + straps form a line above the upper chest.", zh: "將懸掛帶手柄調較至大約腰至大腿位置，雙手各握手柄，向前伸直手臂至手柄與胸口成水平並將身體重心向後靠，然後向前移腳步使身體傾斜約 45 至 60 度（初學 45 度，進階 60 度），雙腳伸直並站穩，起始時手臂及懸掛帶於胸部前上方呈一直線。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; spine straight, chin tucked, eyes up-forward.", zh: "肩帶下壓及縮回；收緊腹橫肌部；保持脊椎挺直，下巴微收並眼望前上方。" },
+      pathOfMotion: { en: "Pull the hands back and out with the elbows flexing, performing horizontal abduction in a chest-level arc; keep forearms in line with the straps.", zh: "雙手向後同時向外以肘屈曲方拉動，在胸前弧線及畫半圓方式進行水平外展，保持前臂及懸掛帶成一直線。" },
+      rangeOfMotion: { en: "Beginner to ~90° elbow (advanced until the elbows pass the body); return until the elbow is nearly straight in front of the upper chest.", zh: "初學者肘屈曲 90 度（或進階直至肘部超越身體並無法繼續為止），還原時至肘微微屈曲於胸部前上方幾乎伸直狀態。" },
+      breathing: { en: "Exhale as the body rises forward+up (concentric); inhale on the return (eccentric).", zh: "向後拉使身體向前向上升起時呼氣（向心收縮）；還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Step the feet further forward for a more horizontal angle (~60°).", zh: "雙腳向前移使身體更水平（約 60 度）。" },
+    regression: { en: "More upright angle (~45° or higher).", zh: "更直角度（約 45 度或以上）。" },
+    commonFaults: [{ en: "Hips sagging.", zh: "臀部下塌。" }, { en: "Shrugging the shoulders.", zh: "聳肩。" }],
+    variations: [
+      { name: { en: "Machine seated row", zh: "器械坐姿划船" }, level: "beginner", equipment: ["machine"] },
+    ],
+    citation: { doc: "APTHK03", page: 37 },
+  },
+  {
+    name: "Suspension Strap Inverted Narrow Grip Inclined Row", nameZh: "懸掛帶倒轉式上斜划船",
+    muscleGroup: "back", equipment: "suspension", equipmentOptions: ["suspension"],
+    level: "intermediate", difficulty: 3,
+    primaryMuscles: ["rear-delts", "lats", "rhomboids", "traps"], secondaryMuscles: ["biceps"],
+    cues: "Elbows tuck to the body, forearms in line with straps, no shrug.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Set handles to ~waist/thigh height, grip both handles, arms straight, shift weight back; walk the feet forward to incline ~45–60° (beginner 45°), legs straight and stable; at the start the arms + straps form a line above the upper chest.", zh: "將懸掛帶手柄調較至大約腰至大腿位置，雙手各握手柄，伸直手臂並將身體重心向後靠，然後向前移腳步使身體傾斜約 45 至 60 度（初學 45 度，進階 60 或以上），雙腳伸直並站穩，起始時手臂於及懸掛帶於胸部前上方呈一直線。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; spine straight, chin tucked, eyes up-forward.", zh: "肩帶下壓及縮回；收緊腹橫肌部；保持脊椎挺直，下巴微收並眼望前上方。" },
+      pathOfMotion: { en: "Tuck the hands to the sides of the body, flexing the elbows to pull the body up + forward into shoulder extension; keep forearms in line with the straps.", zh: "雙手向後緊貼身旁使肘屈曲拉動身體向上向前完成肩伸展，保持前臂及懸掛帶成一直線。" },
+      rangeOfMotion: { en: "Beginner to ~90° elbow (advanced until elbows pass the body without rounding shoulders); return until the elbow is nearly straight.", zh: "初學者肘屈曲 90 度（或進階直至肘部超越身體並無法繼續為止而沒有圓肩情況），還原時至肘微微屈曲幾乎伸直狀態。" },
+      breathing: { en: "Exhale as the body rises (concentric); inhale on the return (eccentric).", zh: "向後拉使身體向前向上升起時呼氣（向心收縮）；還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Step further forward (~60°+) for a more horizontal body.", zh: "雙腳前移（約 60 度以上）使身體更水平。" },
+    regression: { en: "More upright (~45°) body angle.", zh: "更直（約 45 度）身體角度。" },
+    commonFaults: [{ en: "Rounding the shoulders forward.", zh: "圓肩。" }, { en: "Hips sagging.", zh: "臀部下塌。" }],
+    variations: [],
+    citation: { doc: "APTHK03", page: 39 },
+  },
+
+  // ─────────────────────────── LEGS (下肢肌群) ───────────────────────────
+  {
+    name: "Barbell Parallel Squat", nameZh: "槓鈴平衡蹲舉",
+    muscleGroup: "legs", equipment: "barbell", equipmentOptions: ["barbell"],
+    level: "intermediate", difficulty: 3,
+    primaryMuscles: ["quads", "glutes"], secondaryMuscles: ["hamstrings", "erectors"],
+    cues: "Hips back, knees track toes, no butt wink.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Set the bar just below shoulder height in the rack; stand under it with the bar on the upper traps (not on the cervical spine); even grip; unrack, step back to shoulder width; toes forward or slightly out, knees track the toes, spine neutral.", zh: "預備槓鈴高度約比肩膀略低的位置，站於蹲舉槓鈴架內的槓鈴前，槓鈴於上斜方肌上（而不直接壓於頸椎上），檢查左右長度握距一致，左右手握實槓鈴，將槓鈴取出後向後移並保持與肩同闊位置，雙腳腳尖可指向前或微微外轉，膝蓋指向腳尖，脊椎保持挺直中立。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; chin tucked, eyes forward.", zh: "肩帶下壓縮回；收緊腹橫肌部；下巴收緊眼望前方。" },
+      pathOfMotion: { en: "Sit the hips back and down, torso leaning forward so the trunk stays parallel to the shins; knees keep tracking over the toes.", zh: "下蹲時臀部向後方坐下，身體前傾而使軀幹和脛骨平行，膝蓋保持指向腳尖方向。" },
+      rangeOfMotion: { en: "Beginner to ~90° knee (knee over toe line); intermediate to thighs parallel; high-level deeper — but never with visible butt wink, and don't lock/hyperextend the knee at the top.", zh: "初學者下蹲至膝屈曲 90 度使膝蓋和腳尖約同一垂直線，進階人士可大腿與地面平行成水平，（高水平人士可將下蹲幅度進一步加大成為深蹲），無論選擇何種蹲舉幅度，不應有顯著臀部眨眼（butt wink）現象出現，而蹲起時膝關節微曲不超伸。" },
+      breathing: { en: "Exhale on the way up (concentric); inhale on the way down (eccentric).", zh: "向上升起時呼氣（向心收縮）；向下還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Deeper squat (thighs parallel → below parallel) as mobility allows.", zh: "更深蹲幅（大腿水平 → 低於水平），視乎活動幅度。" },
+    regression: { en: "Box squat to ~90°; lighter / goblet load.", zh: "蹲至箱約 90 度；較輕重量。" },
+    commonFaults: [{ en: "Butt wink (posterior pelvic tilt at the bottom).", zh: "深蹲時出現臀部眨眼。" }, { en: "Knees caving in.", zh: "膝蓋內扣。" }],
+    variations: [
+      { name: { en: "Exercise ball squat", zh: "健身球蹲舉" }, level: "beginner", equipment: ["fitball", "bodyweight"] },
+      { name: { en: "Step up & down", zh: "踏板上落" }, level: "beginner", equipment: ["bodyweight"] },
+      { name: { en: "Leg press (machine)", zh: "坐式蹬腿" }, level: "beginner", equipment: ["machine"] },
+    ],
+    citation: { doc: "APTHK03", page: 41 },
+  },
+  {
+    name: "Barbell Hip Thrust", nameZh: "槓鈴臀推",
+    muscleGroup: "legs", equipment: "barbell", equipmentOptions: ["barbell"],
+    level: "beginner", difficulty: 2,
+    primaryMuscles: ["glutes", "hamstrings"], secondaryMuscles: [],
+    cues: "Shins vertical at top, ribs down, chin tucked, no lumbar hyperextension.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Sit in front of a bench, bar over the ASIS (pad/towel for protection), upper back/scapulae on the bench edge; hands hold the bar; knees bent, hips set so the shins are near vertical at the top.", zh: "預備平板，坐於平板前並將槓鈴置於髂前上棘上方，上背肩胛背靠平板邊沿上，可墊毛巾於兩邊髂前上棘作保護，手扶槓鈴，屈膝及髖使小腿脛骨接近垂直地面。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; chin tucked, eyes up-forward.", zh: "肩帶下壓縮回；收緊腹橫肌部；下巴收緊眼望前上方。" },
+      pathOfMotion: { en: "Keeping the spine neutral, drive the hips + bar straight up; the shins stay roughly vertical.", zh: "保持脊椎挺直情況下，將臀部連槓鈴垂直向上，而過程中小腿脛骨大約垂直地面。" },
+      rangeOfMotion: { en: "Up until the thighs are level, pelvis neutral or slightly posterior tilt, upper back flat on the bench, head neutral with no forward jut; lower until the hips + plates are just off the floor.", zh: "向上至大腿水平地面，骨盆中立或後傾，上背肩胛平貼平板上而頭保持中立沒有前引，下放時臀部和槓鈴片保持微微離地。" },
+      breathing: { en: "Exhale on the way up (concentric); inhale on the lowering (eccentric).", zh: "向上升起時呼氣（向心收縮）；向下還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Heavier load; pause + squeeze at the top.", zh: "加重；頂端停頓並夾緊。" },
+    regression: { en: "Bodyweight glute bridge; shorter range.", zh: "徒手臀橋；較小幅度。" },
+    commonFaults: [{ en: "Hyperextending the lumbar spine at lockout.", zh: "頂端腰椎超伸。" }, { en: "Pushing through the toes.", zh: "用腳尖發力。" }],
+    variations: [
+      { name: { en: "Exercise ball bridge", zh: "球上肩橋" }, level: "beginner", equipment: ["fitball", "bodyweight"] },
+      { name: { en: "Fire hydrant (band)", zh: "消防栓式（橡皮帶）" }, level: "beginner", equipment: ["band", "bodyweight"] },
+      { name: { en: "Clam (band)", zh: "蚌式（橡皮帶）" }, level: "beginner", equipment: ["band", "bodyweight"] },
+    ],
+    citation: { doc: "APTHK03", page: 43 },
+  },
+  {
+    name: "Dumbbell Static Lunge", nameZh: "啞鈴箭步蹲",
+    muscleGroup: "legs", equipment: "dumbbell", equipmentOptions: ["dumbbell"],
+    level: "intermediate", difficulty: 2,
+    primaryMuscles: ["quads", "glutes"], secondaryMuscles: ["hamstrings"],
+    cues: "Both knees ~90°, back heel up, torso upright, front knee over foot.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Hold a dumbbell in each hand at the centre, wrists neutral; split stance slightly longer than a walking stride, rear heel off the floor.", zh: "左右手各握啞鈴中央部份，手腕中立，站姿並前後腳站立，距離略比步行幅度略大，後腳足跟離地。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; chin tucked, eyes forward.", zh: "肩帶下壓縮回；收緊腹橫肌部；下巴收緊眼望前方。" },
+      pathOfMotion: { en: "Keep the spine tall; the rear thigh + knee drop straight down while the front knee travels forward.", zh: "下蹲時保持脊椎挺直，後腳大腿及膝蓋向下，而前腳膝蓋向前。" },
+      rangeOfMotion: { en: "Lower until both knees reach ~90° without the rear knee touching the floor; front knee not past the toes; stand to straight or slightly bent knees, no lockout.", zh: "下蹲至前及後腳膝屈 90 度而後腳膝蓋沒有觸碰地面，前腳膝蓋不超腳尖水平，站起時雙腳膝關節伸直或微曲而不超伸。" },
+      breathing: { en: "Exhale on the way up (concentric); inhale on the way down (eccentric).", zh: "向上升起時呼氣（向心收縮）；向下還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Walking lunge / rear-foot-elevated split squat; heavier load.", zh: "行走箭步蹲 / 後腳墊高分腿蹲；加重。" },
+    regression: { en: "Bodyweight, hold support; shorter range.", zh: "徒手並扶支撐；較小幅度。" },
+    commonFaults: [{ en: "Front knee caving in.", zh: "前膝內扣。" }, { en: "Torso pitching forward.", zh: "上身前傾。" }],
+    variations: [
+      { name: { en: "Dumbbell single leg calf raise", zh: "啞鈴單腳站姿提踵" }, level: "beginner", equipment: ["dumbbell"] },
+    ],
+    citation: { doc: "APTHK03", page: 45 },
+  },
+  {
+    name: "Dumbbell Stiff Leg Deadlift", nameZh: "啞鈴直腿硬拉",
+    muscleGroup: "legs", equipment: "dumbbell", equipmentOptions: ["dumbbell"],
+    level: "intermediate", difficulty: 3,
+    primaryMuscles: ["hamstrings", "glutes"], secondaryMuscles: ["erectors"],
+    cues: "Hinge at the hips, soft knees, neutral spine, dumbbells slide down the thighs.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Hold a dumbbell in each hand at the centre, wrists neutral, dumbbells in front of the thighs; stand feet hip-width, knees softly bent ~10–15°, spine neutral.", zh: "左右手各握啞鈴中央部份，手腕中立，啞鈴放於大腿前方，站立時腳與髖同闊，膝關節微曲約 10-15 度，脊椎保持挺直。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; chin tucked, eyes forward.", zh: "肩帶下壓縮回；收緊腹橫肌部；下巴收緊眼望前方。" },
+      pathOfMotion: { en: "Keeping the spine neutral, hinge forward at the hips with the knee angle unchanged; the dumbbells slide vertically down the thighs + shins.", zh: "保持脊椎挺直情況下，以髖部作樞紐向前傾，膝關節屈曲角度不變，啞鈴沿大腿及小腿向下垂直滑動。" },
+      rangeOfMotion: { en: "Beginner ~45–60° hip flexion; advanced up to 90° / torso parallel — only as far as the spine stays neutral.", zh: "向下幅度初學者可以 45-60 度髖屈曲，進階可達 90 度甚至身體呈水平 — 以脊椎保持中立為限。" },
+      breathing: { en: "Exhale on the way up (concentric); inhale on the lowering (eccentric).", zh: "向上升起時呼氣（向心收縮）；向下還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Increase hip flexion toward parallel; heavier load.", zh: "增加髖屈曲至水平；加重。" },
+    regression: { en: "Smaller range (~45°); lighter load.", zh: "較小幅度（約 45 度）；較輕重量。" },
+    commonFaults: [{ en: "Rounding the lower back.", zh: "圓背 / 寒背。" }, { en: "Squatting instead of hinging.", zh: "變成蹲而非髖鉸鏈。" }],
+    variations: [],
+    citation: { doc: "APTHK03", page: 47 },
+  },
+
+  // ─────────────────────────── CORE (腹部肌群) ───────────────────────────
+  {
+    name: "Reverse Crunch", nameZh: "反向捲腹",
+    muscleGroup: "core", equipment: "bodyweight", equipmentOptions: ["bodyweight"],
+    level: "beginner", difficulty: 2,
+    primaryMuscles: ["abs"], secondaryMuscles: ["obliques"],
+    cues: "Posterior pelvic tilt rolls the lumbar up; thighs ~vertical at the bottom.",
+    tempo: "3-3",
+    keyPoints: {
+      bodyPosition: { en: "Lie supine on a mat, hands by the sides, feet lifted off the floor with hips + knees flexed ~90°.", zh: "平躺軟墊上，雙手於身體兩旁，雙腳抬離地面髖膝屈曲約 90 度。" },
+      stabilization: { en: "Depress the shoulder girdle; brace the abdominals; chin tucked, eyes up.", zh: "肩帶下壓；收緊腹橫肌部；下巴收緊眼望上方。" },
+      pathOfMotion: { en: "Keeping the knees at ~90°, a posterior pelvic tilt rolls the lumbar spine up + toward the head segment by segment; reverse segment by segment on the way down.", zh: "保持膝屈曲 90 度情況下，由骨盆後傾帶動使腰椎逐節向上及向頭部方向捲動，向下還原時也是逐節回落方式。" },
+      rangeOfMotion: { en: "Roll up until the whole lower back leaves the floor (pubis ↔ ribcage shortest), keeping the rib-cage thoracic spine flat on the mat; return until the whole lower back is flat again with thighs ~vertical.", zh: "向上捲至整個下背離開地面，使恥骨和肋骨架距離縮至最短，而肋骨架範圍的胸椎保持平貼地上，還原時回落至整個下背平貼平面即可，此時大腿大約垂直地面。" },
+      breathing: { en: "Exhale on the way up (concentric); inhale on the lowering (eccentric).", zh: "向上升時呼氣（向心收縮）；向下還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_33,
+    },
+    progression: { en: "Slower eccentric; straighten the legs slightly for a longer lever.", zh: "更慢離心；雙腿略伸直增加力臂。" },
+    regression: { en: "Smaller range; feet lower.", zh: "較小幅度；雙腳放低。" },
+    commonFaults: [{ en: "Swinging the legs for momentum.", zh: "甩動雙腿借力。" }, { en: "Lower back arching off the mat.", zh: "下背拱離地面。" }],
+    variations: [
+      { name: { en: "Exercise ball plank", zh: "健身球平板支撐" }, level: "intermediate", equipment: ["fitball", "bodyweight"] },
+    ],
+    citation: { doc: "APTHK03", page: 49 },
+  },
+  {
+    name: "Crunch Twist", nameZh: "捲腹腹斜肌旋轉",
+    muscleGroup: "core", equipment: "bodyweight", equipmentOptions: ["bodyweight"],
+    level: "beginner", difficulty: 2,
+    primaryMuscles: ["abs", "obliques"], secondaryMuscles: [],
+    cues: "Shoulder toward opposite hip on a diagonal; head in line with the spine.",
+    tempo: "3-3",
+    keyPoints: {
+      bodyPosition: { en: "Lie supine on a mat, knees flexed ~90°; beginner crosses the arms on the chest, advanced places hands by the ears.", zh: "平躺軟墊上，雙膝屈曲約 90 度，初學者可雙手置於胸前交叉，進階可將手放於耳旁。" },
+      stabilization: { en: "Depress the shoulder girdle; brace the abdominals; chin tucked, eyes up.", zh: "肩帶下壓；收緊腹橫肌部；下巴收緊眼望上方。" },
+      pathOfMotion: { en: "With pelvis + lower back fixed, when twisting left the upper back rolls up + to the left so the right shoulder travels toward the left hip on a diagonal (mirror on the right); the head stays in line with the spine.", zh: "骨盆及下背身固定情況下，向左旋轉時將上背緩緩向上及向左方捲起，使右肩朝向左髖斜線軌跡進行，向右時則左肩向右髖方向，頭部保持位置應保持和脊椎一致。" },
+      rangeOfMotion: { en: "Roll up until the whole upper back leaves the floor (ribs ↔ pubis shortest), rotating until the lower back is near the mat; return to supine and repeat the other side, or hold the crunch and alternate sides.", zh: "向上捲至整個上背離開地面，使肋骨和恥骨距離縮至最短，向左或向右轉至下背將近離地為止，再選擇返回原來平躺的姿勢再作另一邊的重複動作 或 保持捲腹（上背離地）狀態重複左右旋轉。" },
+      breathing: { en: "Exhale rising to the L/R end-range (concentric); inhale on the lowering (eccentric).", zh: "向上升起至左或右邊盡頭時呼氣（向心收縮）；向下還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_33,
+    },
+    progression: { en: "Hands by the ears; hold the crunch and alternate.", zh: "雙手放耳旁；保持捲腹交替。" },
+    regression: { en: "Arms crossed on the chest; smaller rotation.", zh: "雙手胸前交叉；較小旋轉。" },
+    commonFaults: [{ en: "Pulling the neck with the hands.", zh: "雙手拉頸。" }, { en: "Using momentum.", zh: "借力甩動。" }],
+    variations: [
+      { name: { en: "Russian twist", zh: "俄羅斯轉體" }, level: "intermediate", equipment: ["bodyweight"] },
+      { name: { en: "Criss cross", zh: "十字交叉" }, level: "intermediate", equipment: ["bodyweight"] },
+    ],
+    citation: { doc: "APTHK03", page: 51 },
+  },
+  {
+    name: "Fitball Crunch", nameZh: "健身球捲腹",
+    muscleGroup: "core", equipment: "fitball", equipmentOptions: ["fitball"],
+    level: "beginner", difficulty: 2,
+    primaryMuscles: ["abs", "obliques"], secondaryMuscles: [],
+    cues: "Ball under the lumbar/pelvis; roll the upper back up, head in line with spine.",
+    tempo: "3-3",
+    keyPoints: {
+      bodyPosition: { en: "Sit on the ball (sized/inflated so the knees sit level with or slightly below the hips). Feet shoulder-width flat on the floor; walk the feet forward while slowly reclining until the ball sits under the lumbar + pelvis; arms crossed on the chest (advanced: by the ears).", zh: "坐於健身球上，健身球大小及充氣量應能確保坐下後膝與髖成水平或膝略低，雙腳與肩同闊張開平放地面，然後緩緩向前移動腳步同時身體緩緩向後靠及躺下，直至健身球置於腰椎與骨盆下方，雙手可交叉於胸前（或進階把手放於耳旁）。" },
+      stabilization: { en: "Depress the shoulder girdle; brace the abdominals; chin tucked, eyes up-forward.", zh: "肩帶下壓；收緊腹橫肌部；下巴收緊眼望前上方。" },
+      pathOfMotion: { en: "With pelvis + lower back fixed on the ball, roll the upper back up + forward; the head stays in line with the spine.", zh: "骨盆及下背身固定情況下，將上背緩緩向上及向前捲起，頭部保持位置應保持和脊椎一致。" },
+      rangeOfMotion: { en: "Roll up until the whole upper back leaves the ball (ribs ↔ pubis shortest), lumbar + pelvis fixed on the ball; return until the body is near parallel to the floor with most of the upper back on the ball.", zh: "向上捲至整個上背離開健身球，使肋骨和恥骨距離縮至最短，但腰椎和骨盆固定於球上不變，向下還原至身體近乎與地面平行成一直線，上背大部份置於健身球上。" },
+      breathing: { en: "Exhale on the way up (concentric); inhale on the lowering (eccentric).", zh: "向上升起時呼氣（向心收縮）；向下還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_33,
+    },
+    progression: { en: "Hands by the ears; greater range.", zh: "雙手放耳旁；更大幅度。" },
+    regression: { en: "Arms crossed on the chest; smaller range.", zh: "雙手胸前交叉；較小幅度。" },
+    commonFaults: [{ en: "Pulling the neck.", zh: "拉頸。" }, { en: "Hips dropping off the ball.", zh: "臀部離開球面。" }],
+    variations: [],
+    citation: { doc: "APTHK03", page: 53 },
+  },
+  {
+    name: "Suspension Strap Jackknife", nameZh: "懸掛帶摺刀",
+    muscleGroup: "core", equipment: "suspension", equipmentOptions: ["suspension"],
+    level: "intermediate", difficulty: 3,
+    primaryMuscles: ["abs"], secondaryMuscles: ["obliques"],
+    cues: "Hands under shoulders, draw the knees in; spine stable, no rounding.",
+    tempo: "3-3",
+    keyPoints: {
+      bodyPosition: { en: "Set the handles ~2–3 ft off the floor / below the knee; loop the feet into the foot cradles, kneel into a 4-point support, then crawl the hands forward to ~90° hip flexion with the hands under the shoulders, shoulder-hip-pelvis in a line, straps vertical.", zh: "將懸掛帶手柄設至離地面約 2-3 呎或膝蓋以下，將雙腳繫於腳架上，然後雙膝跪地作四點支撐，再用手向前爬行至髖屈 90 度，手於肩膀下方，肩、骨盆成一直線，懸掛帶此時應保持垂直地面。" },
+      stabilization: { en: "Depress + slightly retract the shoulder girdle; brace the abdominals; chin tucked, eyes down-forward.", zh: "肩帶下壓及微微縮回；收緊腹橫肌部；下巴收緊眼望向前下方。" },
+      pathOfMotion: { en: "Extend both legs back to a plank — shoulder, pelvis, knee, ankle in one line — keeping the spine stable with no rounding; the lumbar stays neutral.", zh: "將雙腿伸直向後同時保持上身穩定，至肩、骨盆、膝及踝關節成一直線，過程中脊椎盡量保持穩定而沒有寒背現象，下背腰椎盡量保持中立。" },
+      rangeOfMotion: { en: "Start with hands supporting, hips at ~90° with knees touching the floor in a 4-point support, head-shoulder-pelvis in a line; finish fully extended into a plank with no knee hyperextension; keep the pelvis neutral with no anterior tilt / lumbar over-arch (advanced: keep it continuous without pausing at the 4-point kneel).", zh: "開始位置以雙掌支撐，髖屈至 90 度時雙膝觸碰地面作四點跪撐同時頭、肩、骨盆成一直線，動作完成時繼續以雙掌作支撐，髖膝完全伸直至肩、骨盆、膝及踝關節成一直線而膝關節沒有超伸即可；過程中盡量保持骨盆中立而沒有顯著前傾或腰部過份前曲（進階動作維持動作的連貫性，不作四點跪撐停頓）。" },
+      breathing: { en: "Exhale extending the legs back; inhale drawing toward the chest. (For the rectus-focused jackknife: inhale drawing in, exhale extending.)", zh: "下肢伸直向後時呼氣；向胸部方向拉動時吸氣。（注意：若改作摺刀動作訓練腹直肌時，呼吸應以向胸部拉入呼氣，伸直下肢時吸氣為主。）" },
+      rhythm: TEMPO_33,
+    },
+    progression: { en: "Continuous reps without pausing at the 4-point kneel; jackknife (knees to chest) for rectus emphasis.", zh: "不作停頓的連貫動作；摺刀（屈膝向胸）以加強腹直肌。" },
+    regression: { en: "Pause at the 4-point kneel each rep; smaller range.", zh: "每次於四點跪撐停頓；較小幅度。" },
+    commonFaults: [{ en: "Hips sagging (lumbar hyperextension).", zh: "臀部下塌（腰椎超伸）。" }, { en: "Rounding the upper back.", zh: "寒背。" }],
+    variations: [],
+    citation: { doc: "APTHK03", page: 55 },
+  },
+
+  // ─────────────────────────── SHOULDERS (肩部肌群) ───────────────────────────
+  {
+    name: "Seated Barbell Shoulder Press", nameZh: "坐姿槓鈴肩上推舉",
+    muscleGroup: "shoulders", equipment: "barbell", equipmentOptions: ["barbell"],
+    level: "intermediate", difficulty: 3,
+    primaryMuscles: ["front-delts", "side-delts"], secondaryMuscles: ["triceps"],
+    cues: "Bar over the crown, forearms vertical; never press behind the neck.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Set an incline bench near vertical in front of a squat rack; sit with feet flat, head + shoulders against the back-rest with ~a palm of lumbar space; the bar sits just behind the crown, hands open ~90° shoulder abduction + elbow flexion; lift the bar from behind the crown to directly over the head, check even grip, wrists neutral.", zh: "將斜板靠背調至微微上斜（接近垂直），置於深蹲槓鈴架前方，坐於板凳上使雙腳平方地面，頭肩貼向靠背而腰椎有約一掌厚度空間，槓鈴剛於頭頂微微偏後方位置，雙手打開呈 90 度肩外展及肘屈曲，向上向後延伸並能觸及緊握槓鈴，同時能將槓鈴由頭頂後方舉起取出移至頭頂正上方，檢查左右握距平衡，保持手腕中立。" },
+      stabilization: { en: "Slightly depress + retract the shoulder girdle; brace the abdominals; chin tucked, eyes forward.", zh: "肩帶微微下壓及縮回；收緊腹橫肌部；下巴微收並眼望前方。" },
+      pathOfMotion: { en: "Lower the bar vertically in front of the face, drive up vertically with a slight backward arc, stopping directly over the head; keep the forearms vertical to the floor.", zh: "將槓鈴由面部前方垂直向下，發力向上時垂直及微微弧線向上後方舉起，於頭頂正上方停止，過程中保持前臂垂直向地面。" },
+      rangeOfMotion: { en: "Beginner: from the top with arms straight/slightly bent (no lockout) lower to ~90° elbow (bar ~eye level). Advanced: lower until the elbow drops below shoulder level (bar ~chin/clavicle).", zh: "初學：最高點至手臂（肘關節）伸直或微曲而不超伸，下降至肘呈 90 度（槓鈴約同眼水平同高）。進階：下降時肘關節低於水平（低於肩），槓鈴約下巴或鎖骨水平位置為止。" },
+      breathing: BREATH_UP_EXHALE,
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Deeper range (elbow below shoulder, bar to chin/clavicle); heavier load.", zh: "更大幅度（肘低於肩，槓鈴至下巴/鎖骨）；加重。" },
+    regression: { en: "Stop at ~90° elbow; lighter load.", zh: "肘只到 90 度；較輕重量。" },
+    commonFaults: [{ en: "Pressing behind the neck.", zh: "頸後推舉。" }, { en: "Lower back arching off the rest.", zh: "腰背離開靠背拱起。" }],
+    variations: [
+      { name: { en: "Machine shoulder press", zh: "器械肩上推舉" }, level: "beginner", equipment: ["machine"] },
+      { name: { en: "Landmine shoulder press", zh: "地雷管肩上推" }, level: "intermediate", equipment: ["barbell"] },
+    ],
+    citation: { doc: "APTHK03", page: 57 },
+  },
+  {
+    name: "Cable Lateral Raise", nameZh: "鋼線側平舉",
+    muscleGroup: "shoulders", equipment: "cable", equipmentOptions: ["cable", "band"],
+    level: "beginner", difficulty: 2,
+    primaryMuscles: ["side-delts"], secondaryMuscles: [],
+    cues: "Lead with the elbow to shoulder height; elbow never above the shoulder.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Set the handle at the lowest position; squat down on the training side to grip the handle, stand side-on, feet slightly wider than shoulders, elbow softly bent, wrist neutral; the cable + handle sit just in front of the body.", zh: "鋼線手柄置於最低位置，訓練一側蹲下緊握手柄，並側身站立，雙腳打開略比肩闊，肘部持微曲，手腕中立，鋼線和手柄應剛好在身體前方。" },
+      stabilization: { en: "Depress + slightly retract the shoulder girdle; brace the abdominals; chin tucked, eyes forward.", zh: "肩帶下壓及微微縮回；收緊腹橫肌部；下巴微收並眼望前方。" },
+      pathOfMotion: { en: "From low + inside, raise out + up via shoulder abduction; keep the elbow angle + neutral wrist unchanged.", zh: "由下及內側向外及上方以肩外展完成，過程中保持手肘角度不變及手腕中立角度不變。" },
+      rangeOfMotion: { en: "Up to 90° shoulder abduction (arm parallel to the floor — elbow NOT above the shoulder); down until the arm hangs with the handle ~between the legs.", zh: "向上至肩外展 90（手臂與地面平行）。向下至手臂向下而手柄約在雙腿之間。" },
+      breathing: BREATH_UP_EXHALE,
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Heavier load with strict form; pause at the top.", zh: "嚴格姿勢下加重；頂端停頓。" },
+    regression: { en: "Lighter load; smaller range.", zh: "較輕重量；較小幅度。" },
+    commonFaults: [{ en: "Elbow rising above the shoulder.", zh: "側平舉動作時肘關節高於肩。" }, { en: "Shrugging the traps.", zh: "聳肩借力。" }],
+    variations: [
+      { name: { en: "Standing cable reverse fly", zh: "站姿鋼線反向飛鳥" }, level: "intermediate", equipment: ["cable"] },
+      { name: { en: "Elastic band shoulder external / internal rotation", zh: "橡皮帶肩外旋及內旋" }, level: "beginner", equipment: ["band"] },
+    ],
+    citation: { doc: "APTHK03", page: 59 },
+  },
+  {
+    name: "Dumbbell Bent Over Reverse Fly", nameZh: "啞鈴俯身飛鳥",
+    muscleGroup: "shoulders", equipment: "dumbbell", equipmentOptions: ["dumbbell"],
+    level: "intermediate", difficulty: 2,
+    primaryMuscles: ["rear-delts", "rhomboids", "traps"], secondaryMuscles: [],
+    cues: "Hinge 45–90°, soft elbows fixed, raise to shoulder level in an arc.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Hold a dumbbell in each hand at the centre, knees softly bent (~15–30°), feet hip/shoulder-width; hinge forward ~45–90° at the hips (per control), elbows softly bent, dumbbells hang naturally below the chest, wrists neutral (if the client can't hold the standing hinge, consider a prone incline-bench version).", zh: "雙手各握啞鈴中央，膝蓋微曲（約 15-30 度），雙腳與髖或肩同闊站立，以髖關節做樞紐向前俯身前傾約 45-90 度（視乎身體操控能力），肘微曲手臂及啞鈴於胸部對出自然垂低，手腕保持中立（如客人無法以上述站立俯身姿勢進行，應考慮俯臥上斜版代替）。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; keep the spine straight, chin tucked, eyes down-forward.", zh: "肩帶下壓及縮回；收緊腹橫肌部；保持脊椎挺直，下巴微收並眼望前下方。" },
+      pathOfMotion: { en: "Raise the dumbbells from below, out + up in a semicircular arc.", zh: "啞鈴由下以上及向外展開呈半圓/弧線。" },
+      rangeOfMotion: { en: "Up to 90° horizontal abduction at shoulder level (arms parallel to the floor); return to ~10° abduction in front of the outer thighs (just shy of a natural hang).", zh: "向上至肩水平外展 90（手臂與地面平行）。向下還原至肩水平外展約 10 度於大腿前外側位置（即雙臂和啞鈴比自然下垂時稍微外展一點）。" },
+      breathing: BREATH_UP_EXHALE,
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Greater hinge angle; pause at the top.", zh: "更大俯身角度；頂端停頓。" },
+    regression: { en: "Prone on an incline bench; lighter load.", zh: "俯臥上斜板；較輕重量。" },
+    commonFaults: [{ en: "Rounding the back.", zh: "圓背。" }, { en: "Swinging / using momentum.", zh: "甩動借力。" }],
+    variations: [
+      { name: { en: "Prone / bent over Y exercise", zh: "俯臥/俯身 Y 訓練" }, level: "beginner", equipment: ["bodyweight", "dumbbell"] },
+      { name: { en: "Prone / bent over T exercise", zh: "俯臥/俯身 T 訓練" }, level: "beginner", equipment: ["bodyweight", "dumbbell"] },
+      { name: { en: "Battle ropes alternating wave", zh: "戰繩交替波浪" }, level: "intermediate", equipment: ["battle-ropes"] },
+      { name: { en: "Battle ropes circle", zh: "戰繩打圈" }, level: "intermediate", equipment: ["battle-ropes"] },
+    ],
+    citation: { doc: "APTHK03", page: 61 },
+  },
+
+  // ─────────────────────────── ARMS — Biceps (肱二頭肌) ───────────────────────────
+  {
+    name: "Dumbbell Bicep Curl", nameZh: "啞鈴二頭彎舉",
+    muscleGroup: "arms", equipment: "dumbbell", equipmentOptions: ["dumbbell"],
+    level: "beginner", difficulty: 1,
+    primaryMuscles: ["biceps"], secondaryMuscles: ["forearms"],
+    cues: "Upper arm fixed, no swing, curl to ~135° elbow flexion.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Hold a pair of dumbbells at the centre, stand feet hip-width; start with the arms hanging straight at the front/outside of the thighs, wrists neutral.", zh: "手握一對啞鈴中央位置，站立雙腳與髖同闊，開始時雙臂於大腿前外側自然垂低伸直，手腕保持中立。" },
+      stabilization: { en: "Depress + slightly retract the shoulder girdle; brace the abdominals; chin tucked, eyes forward.", zh: "肩帶下壓及微微縮回；收緊腹橫肌部；下巴收緊眼望向前方。" },
+      pathOfMotion: { en: "Keeping the upper arm fixed and the elbow from drifting forward, flex the elbow up.", zh: "保持上臂固定及肘沒有前移下將肘部向上屈起。" },
+      rangeOfMotion: { en: "Keep the upper arm + spine stable; flex the elbow to its maximum range (~135°).", zh: "保持上臂及脊椎穩定，將肘屈曲至最大幅度（大約 135 度）。" },
+      breathing: BREATH_UP_EXHALE,
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Cable/band curl for constant tension; slower eccentric.", zh: "鋼線/橡皮帶彎舉持續張力；更慢離心。" },
+    regression: { en: "Lighter load; alternate arms.", zh: "較輕重量；單臂交替。" },
+    commonFaults: [{ en: "Swinging with the body.", zh: "身體甩動借力。" }, { en: "Elbows drifting forward.", zh: "肘部前移。" }],
+    variations: [
+      { name: { en: "Cable / elastic band bicep curl", zh: "鋼線/橡皮帶彎舉" }, level: "beginner", equipment: ["cable", "band"] },
+      { name: { en: "Cable / elastic band hammer curl", zh: "鋼線/橡皮帶錘式彎舉" }, level: "beginner", equipment: ["cable", "band"] },
+      { name: { en: "Cable / elastic band reversed curl", zh: "鋼線/橡皮帶反向彎舉" }, level: "beginner", equipment: ["cable", "band"] },
+    ],
+    citation: { doc: "APTHK03", page: 63 },
+  },
+
+  // ─────────────────────────── ARMS — Triceps (肱三頭肌) ───────────────────────────
+  {
+    name: "Fitball Dumbbell Elbow Extension", nameZh: "健身球啞鈴臂屈伸",
+    muscleGroup: "arms", equipment: "fitball", equipmentOptions: ["fitball", "dumbbell"],
+    level: "intermediate", difficulty: 2,
+    primaryMuscles: ["triceps"], secondaryMuscles: [],
+    cues: "Upper arm + trunk fixed; only the elbow moves; bridge hips up in a line.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Hold dumbbells and sit on the ball (sized so the knees are level with or slightly below the hips). Feet shoulder-width flat; walk the feet forward while reclining until the ball is under the cervical spine; press the dumbbells up over the chest, palms facing, wrists neutral, head-body-thighs in a line.", zh: "手持啞鈴坐於健身球上，健身球大小及充氣量應能確保坐下後膝與髖成水平或膝略低，雙腳與肩同闊張開平放地面，然後緩緩向前移動腳步同時身體緩緩向後靠及躺下，直至健身球置於頸椎位置，同時啞鈴於胸前向上方舉起伸直，手握啞鈴中央，掌心相對手腕中立，頭、身體及大腿成一直線。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; chin tucked, eyes up-forward; lift the hips so shoulder, pelvis + knee form a line.", zh: "肩帶下壓縮回；收緊腹橫肌部；下巴收緊眼望前上方，臀部抬高使肩部、骨盆及膝關節呈一直線。" },
+      pathOfMotion: { en: "Flex the elbows to lower the dumbbells toward the sides of the ears; extend the elbows back up without moving the upper arm or trunk.", zh: "肘部屈曲使啞鈴向耳朵兩邊方向下放，還原時肘部伸展使啞鈴向上而沒有移動上臂和軀幹位置。" },
+      rangeOfMotion: { en: "Beginner: flex the elbow to ~90°. Advanced: take the arms toward the head (more shoulder flexion) so the dumbbells lower to eye/ear level; extend to slightly bent, no lockout.", zh: "初學者肘屈曲至 90 度即可，（進階可將手臂向頭部方向進一步肩屈曲，以及肘屈角度提升使啞鈴下降至眼或耳旁位置，還原時肘伸展至微曲而不超伸。" },
+      breathing: { en: "Exhale on the way up (concentric); inhale on the lowering (eccentric).", zh: "向上升起時呼氣（向心收縮）；向下還原吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "More shoulder flexion (overhead) + deeper elbow range.", zh: "更多肩屈曲（過頭）及更深肘幅度。" },
+    regression: { en: "Lying on a bench; lighter load; ~90° elbow.", zh: "改於板凳仰臥；較輕重量；肘只到 90 度。" },
+    commonFaults: [{ en: "Upper arm / elbow drifting.", zh: "上臂或肘部移動。" }, { en: "Hips dropping.", zh: "臀部下塌。" }],
+    variations: [
+      { name: { en: "Dumbbell overhead extension", zh: "啞鈴頸後臂屈伸" }, level: "beginner", equipment: ["dumbbell"] },
+      { name: { en: "Lying barbell triceps extension", zh: "槓鈴仰臥臂屈伸" }, level: "intermediate", equipment: ["barbell"] },
+      { name: { en: "Dumbbell bend-over triceps extension (kickback)", zh: "啞鈴俯身臂屈伸" }, level: "beginner", equipment: ["dumbbell"] },
+      { name: { en: "Declined narrow hand push up", zh: "倒斜窄手掌上壓" }, level: "intermediate", equipment: ["bodyweight"] },
+    ],
+    citation: { doc: "APTHK03", page: 65 },
+  },
+  {
+    name: "Cable / Band Triceps Press Down", nameZh: "鋼線/阻力帶三頭下壓",
+    muscleGroup: "arms", equipment: "cable", equipmentOptions: ["cable", "band"],
+    level: "beginner", difficulty: 1,
+    primaryMuscles: ["triceps"], secondaryMuscles: [],
+    cues: "Elbows pinned to the ribs, only the forearm moves; no hyperextension.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Prepare a rope or Y-handle at the top position; stand a half-step from the stack, forearms pointing forward directly under the handle; grip the handle, lower until the elbows tuck to the ribs at ~90°, feet hip-width, spine tall (slight forward lean ok), wrists neutral.", zh: "預備繩索或 Y 形手柄，手柄設於最高位置，站於離鋼索架半步距離，雙手前臂向前時剛好在手柄正下方，然後向上握好手柄，下拉至肘緊貼身旁/肋骨旁，肘屈曲保持約 90，雙腳與髖同闊，脊椎挺直（身體可微微向前傾）及手腕中立。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; chin tucked, eyes forward.", zh: "肩帶下壓縮回；收緊腹橫肌部；下巴收緊眼望前方。" },
+      pathOfMotion: { en: "Keeping the spine tall and the upper arm fixed, press the forearm + handle down + back to the outside of the thighs.", zh: "保持脊椎挺直及手臂位置固定情況下，將前臂及手柄向大腿外側向下及向後拉下。" },
+      rangeOfMotion: { en: "Press down beside the thighs until the elbow is straight or slightly bent — no hyperextension; on the return up, beginner stops at ~90° elbow (advanced increases the flexion per ability).", zh: "向下至大腿旁肘伸直或微曲而沒有超伸。還原向上時，初學者可於肘屈曲 90 度為止，進階可將肘屈曲幅度微微增加（視乎能力）。" },
+      breathing: { en: "Exhale on the press down (concentric); inhale on the return up (eccentric).", zh: "向下壓時呼氣（向心收縮）；向上還原時吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Single-arm; greater return range; heavier load.", zh: "單臂；更大還原幅度；加重。" },
+    regression: { en: "Band version; lighter load; smaller range.", zh: "橡皮帶版本；較輕重量；較小幅度。" },
+    commonFaults: [{ en: "Elbows flaring forward.", zh: "肘部前移。" }, { en: "Leaning on the bar with the body.", zh: "用身體借力下壓。" }],
+    variations: [],
+    citation: { doc: "APTHK03", page: 67 },
+  },
+
+  // ─────────────────────────── MACHINE EXERCISES (APTHK04) ───────────────────────────
+  {
+    name: "Machine Seated Chest Press", nameZh: "器械坐姿推胸",
+    muscleGroup: "chest", equipment: "machine", equipmentOptions: ["machine"],
+    level: "beginner", difficulty: 1,
+    primaryMuscles: ["chest", "front-delts"], secondaryMuscles: ["triceps"],
+    cues: "Handles at mid-chest, scapulae set, press without locking out.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Adjust the seat so the handles sit at mid-chest; back + head on the pad, feet flat, neutral wrists.", zh: "調整座位使手柄位於胸中部；背及頭貼靠墊，雙腳平放，手腕中立。" },
+      stabilization: STAB_STD,
+      pathOfMotion: { en: "Press the handles forward along the machine's track, roughly horizontal.", zh: "沿器械軌跡向前推出，大約水平。" },
+      rangeOfMotion: { en: "Press to nearly straight (no lockout); return until the elbows are level with the torso.", zh: "推至接近伸直（不鎖死）；還原至肘與軀幹同水平。" },
+      breathing: BREATH_UP_EXHALE,
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Heavier load; controlled tempo.", zh: "加重；控制節奏。" },
+    regression: { en: "Lighter load; partial range.", zh: "較輕重量；部分幅度。" },
+    commonFaults: [{ en: "Shoulders rolling forward.", zh: "圓肩前引。" }, { en: "Locking the elbows hard.", zh: "硬鎖肘。" }],
+    variations: [],
+    citation: { doc: "APTHK04", page: 13 },
+  },
+  {
+    name: "Smith Machine Incline Bench Press", nameZh: "史密斯上斜板臥推",
+    muscleGroup: "chest", equipment: "machine", equipmentOptions: ["machine"],
+    level: "intermediate", difficulty: 2,
+    primaryMuscles: ["chest", "front-delts"], secondaryMuscles: ["triceps"],
+    cues: "30–45° bench, bar to upper chest, scapulae retracted.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Set the bench to 30–45° under the bar; lie back, feet flat, scapulae retracted, bar over the upper chest, neutral wrists; unrack by rotating the hooks off.", zh: "將板凳調至 30-45 度置於槓下；躺下雙腳平放，肩胛縮回，槓鈴於上胸上方，手腕中立；轉動掛鉤離架。" },
+      stabilization: STAB_STD,
+      pathOfMotion: { en: "Bar travels vertically on the Smith track to the upper chest.", zh: "槓鈴沿史密斯機軌跡垂直至上胸。" },
+      rangeOfMotion: { en: "Lower to the upper chest; press to nearly straight, no lockout.", zh: "下放至上胸；推至接近伸直，不鎖死。" },
+      breathing: BREATH_UP_EXHALE,
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Heavier load; pause at the chest.", zh: "加重；胸口停頓。" },
+    regression: { en: "Lighter load; smaller range.", zh: "較輕重量；較小幅度。" },
+    commonFaults: [{ en: "Bar drifting to the neck.", zh: "槓鈴偏向頸部。" }, { en: "Hips lifting.", zh: "臀部離墊。" }],
+    variations: [],
+    citation: { doc: "APTHK04", page: 14 },
+  },
+  {
+    name: "Machine Shoulder Press", nameZh: "器械肩上推舉",
+    muscleGroup: "shoulders", equipment: "machine", equipmentOptions: ["machine"],
+    level: "beginner", difficulty: 1,
+    primaryMuscles: ["front-delts", "side-delts"], secondaryMuscles: ["triceps"],
+    cues: "Handles at shoulder height, press overhead without locking out.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Adjust the seat so the handles start at shoulder height; back on the pad, feet flat, neutral wrists.", zh: "調整座位使手柄起始於肩高；背貼靠墊，雙腳平放，手腕中立。" },
+      stabilization: { en: "Slightly depress + retract the shoulder girdle; brace the abdominals; chin tucked.", zh: "肩帶微微下壓及縮回；收緊腹橫肌部；下巴微收。" },
+      pathOfMotion: { en: "Press the handles overhead along the track.", zh: "沿軌跡向頭頂上方推出。" },
+      rangeOfMotion: { en: "Press to nearly straight (no lockout); return until the elbows reach ~90°.", zh: "推至接近伸直（不鎖死）；還原至肘約 90 度。" },
+      breathing: BREATH_UP_EXHALE,
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Heavier load; controlled tempo.", zh: "加重；控制節奏。" },
+    regression: { en: "Lighter load; partial range.", zh: "較輕重量；部分幅度。" },
+    commonFaults: [{ en: "Lower back arching off the pad.", zh: "腰背離墊拱起。" }, { en: "Shrugging.", zh: "聳肩。" }],
+    variations: [],
+    citation: { doc: "APTHK04", page: 15 },
+  },
+  {
+    name: "Lat Pull Down", nameZh: "頸前下拉",
+    muscleGroup: "back", equipment: "machine", equipmentOptions: ["machine", "cable"],
+    level: "beginner", difficulty: 1,
+    primaryMuscles: ["lats", "biceps"], secondaryMuscles: ["rhomboids", "forearms"],
+    cues: "Lean slightly back, drive elbows down to the front, bar to upper chest.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Set the thigh pad; grip the bar wider than shoulders, sit with a slight backward lean, neutral wrists.", zh: "調好大腿墊；握槓略比肩闊，坐下身體微微後傾，手腕中立。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; chin tucked, eyes forward.", zh: "肩帶下壓縮回；收緊腹橫肌部；下巴微收並眼望前方。" },
+      pathOfMotion: { en: "Pull the bar to the front of the upper chest, driving the elbows down + back. Never behind the neck.", zh: "將槓拉至上胸前方，肘向下及向後拉。切勿頸後下拉。" },
+      rangeOfMotion: { en: "Pull to the upper chest; return until the arms are nearly straight, no shoulder shrug.", zh: "拉至上胸；還原至手臂接近伸直，沒有聳肩。" },
+      breathing: { en: "Exhale on the pull down (concentric); inhale on the return (eccentric).", zh: "向下拉時呼氣（向心收縮）；還原時吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Heavier load; pause at the chest.", zh: "加重；胸口停頓。" },
+    regression: { en: "Lighter load; smaller range.", zh: "較輕重量；較小幅度。" },
+    commonFaults: [{ en: "Behind-the-neck pulldown.", zh: "頸後下拉。" }, { en: "Leaning back excessively.", zh: "過度後仰借力。" }],
+    variations: [],
+    citation: { doc: "APTHK04", page: 16 },
+  },
+  {
+    name: "Machine Seated Row", nameZh: "器械坐姿划船",
+    muscleGroup: "back", equipment: "machine", equipmentOptions: ["machine"],
+    level: "beginner", difficulty: 1,
+    primaryMuscles: ["lats", "rhomboids", "traps", "rear-delts"], secondaryMuscles: ["biceps"],
+    cues: "Chest on the pad, drive elbows back, squeeze the shoulder blades.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Chest against the pad, grip the handles, spine tall, neutral wrists.", zh: "胸口貼靠墊，握手柄，脊椎挺直，手腕中立。" },
+      stabilization: { en: "Depress + retract the shoulder girdle; brace the abdominals; chin tucked.", zh: "肩帶下壓縮回；收緊腹橫肌部；下巴微收。" },
+      pathOfMotion: { en: "Pull the handles toward the lower ribs, elbows driving back along the track.", zh: "將手柄拉向下肋，肘沿軌跡向後拉。" },
+      rangeOfMotion: { en: "Pull until the shoulder blades squeeze; return until the arms are nearly straight, no rounding.", zh: "拉至肩胛夾緊；還原至手臂接近伸直，沒有圓背。" },
+      breathing: { en: "Exhale on the row (concentric); inhale on the return (eccentric).", zh: "划船時呼氣（向心收縮）；還原時吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Heavier load; pause + squeeze.", zh: "加重；停頓夾緊。" },
+    regression: { en: "Lighter load; smaller range.", zh: "較輕重量；較小幅度。" },
+    commonFaults: [{ en: "Rounding the lower back.", zh: "圓背。" }, { en: "Shrugging.", zh: "聳肩。" }],
+    variations: [],
+    citation: { doc: "APTHK04", page: 17 },
+  },
+  {
+    name: "Leg Press", nameZh: "坐式蹬腿",
+    muscleGroup: "legs", equipment: "machine", equipmentOptions: ["machine"],
+    level: "beginner", difficulty: 1,
+    primaryMuscles: ["quads", "glutes"], secondaryMuscles: ["hamstrings"],
+    cues: "Feet shoulder-width, knees track toes, don't lock out, lower back stays on the pad.",
+    tempo: "4-4",
+    keyPoints: {
+      bodyPosition: { en: "Back + hips on the pad, feet shoulder-width on the platform, knees tracking the toes.", zh: "背及臀貼墊，雙腳與肩同闊置於踏板，膝蓋指向腳尖。" },
+      stabilization: { en: "Brace the abdominals; keep the lower back on the pad; chin tucked.", zh: "收緊腹橫肌部；下背貼墊；下巴微收。" },
+      pathOfMotion: { en: "Press the platform away along the track; control the return.", zh: "沿軌跡將踏板蹬出；控制還原。" },
+      rangeOfMotion: { en: "Lower until the knees reach ~90° without the lower back lifting off the pad; press to nearly straight, no lockout.", zh: "下降至膝約 90 度而下背沒有離墊；蹬至接近伸直，不鎖死。" },
+      breathing: { en: "Exhale on the press (concentric); inhale on the return (eccentric).", zh: "蹬出時呼氣（向心收縮）；還原時吸氣（離心收縮）。" },
+      rhythm: TEMPO_44,
+    },
+    progression: { en: "Heavier load; greater (safe) depth.", zh: "加重；更大（安全）幅度。" },
+    regression: { en: "Lighter load; smaller range.", zh: "較輕重量；較小幅度。" },
+    commonFaults: [{ en: "Lower back rounding off the pad at the bottom.", zh: "底部下背離墊圓背。" }, { en: "Locking the knees hard.", zh: "硬鎖膝。" }],
+    variations: [],
+    citation: { doc: "APTHK04", page: 18 },
+  },
+];

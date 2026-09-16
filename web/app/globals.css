@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #__next { height: 100%; width: 100%; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  color: #f4ede2;
+  overflow: hidden;
+  /* Dark-grey "deep space" base. <SpaceBackground /> paints the twinkling
+     starfield + shooting stars on top (a fixed full-screen canvas). */
+  background-color: #15161a;
+  background-image:
+    radial-gradient(125% 95% at 50% 10%, #23252d 0%, #181a1f 45%, #0e0f12 100%);
+}
+
+/* App backdrop — fixed behind all app chrome. */
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: block;
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(244,237,226,0.12); border-radius: 2px; }
+* { scrollbar-width: thin; scrollbar-color: rgba(244,237,226,0.12) transparent; }
+
+/* ─── Apple-style Liquid Glass ─────────────────────────────────── */
+.glass {
+  position: relative;
+  background: rgba(255, 252, 245, 0.06);
+  border: 1px solid rgba(255, 252, 245, 0.14);
+  box-shadow:
+    0 1px 0 rgba(255, 252, 245, 0.28) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.20) inset,
+    0 0 0 0.5px rgba(255, 252, 245, 0.08) inset,
+    0 18px 40px -12px rgba(0, 0, 0, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  isolation: isolate;
+  min-width: 0;            /* allow the card to shrink inside flex/grid */
+}
+/* Long unbreakable strings (tokens, URLs, IDs) wrap instead of overflowing
+   the clipped (overflow:hidden) glass box. */
+.glass, .glass * {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg,
+      rgba(255, 252, 245, 0.28) 0%,
+      rgba(255, 252, 245, 0.06) 18%,
+      transparent 40%,
+      transparent 100%);
+  pointer-events: none;
+}
+.glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg,
+    rgba(255, 252, 245, 0.35) 0%,
+    rgba(255, 252, 245, 0.02) 35%,
+    rgba(0, 0, 0, 0.15) 65%,
+    rgba(255, 252, 245, 0.18) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+/* Soft attention pulse for alert metric cards (count > 0). */
+@keyframes alertPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--pulse-color, rgba(232,152,120,0.5)); }
+  50%      { box-shadow: 0 0 0 5px transparent; }
+}
+.alert-pulse { animation: alertPulse 2.2s ease-in-out infinite; }
+
+.glass-tint-moss       { background-color: rgba(98, 132, 88, 0.18); }
+.glass-tint-ochre      { background-color: rgba(184, 138, 76, 0.18); }
+.glass-tint-terracotta { background-color: rgba(184, 92, 64, 0.18); }
+.glass-tint-sage       { background-color: rgba(122, 148, 124, 0.18); }
+.glass > * { position: relative; z-index: 1; }

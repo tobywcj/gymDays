@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(npx supabase db push:*)",
+      "Bash(supabase db push:*)"
+    ]
+  }
+}

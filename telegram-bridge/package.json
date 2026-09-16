@@ -1,0 +1,10 @@
+{
+  "name": "gymdays-telegram-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Telegram long-poll bridge — forwards inbound bot messages to the AI service and sends replies. Free + official Telegram Bot API; no public URL needed.",
+  "scripts": {
+    "start": "node index.js"
+  }
+}

@@ -1,0 +1,24 @@
+node_modules/
+.next/
+out/
+dist/
+.env
+.env.local
+.env*.local
+*.log
+.DS_Store
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+playwright-report/
+test-results/
+.pgdata/
+
+# Local tooling state
+supabase/.temp/
+*.tsbuildinfo
+.claude/settings.local.json
