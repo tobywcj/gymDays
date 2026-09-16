@@ -80,17 +80,23 @@ test.describe("M6 Strava ingest", () => {
     expect(remaining.data?.length ?? 0).toBe(0);
   });
 
-  test("dev-seed populates 5 activities on the client detail page", async ({ page }) => {
+  test("dev-seed populates activities and the 3-series chart on the client detail page", async ({ page }) => {
     await signIn(page, TRAINER_A);
 
     // Drive the dev-seed via the API directly (the UI seed button is hidden
     // when STRAVA_CLIENT_ID is configured — connect button takes its place).
     const apiResp = await page.request.post(`/api/strava/dev-seed/${aliceId}`);
     expect(apiResp.status()).toBe(200);
+    const { inserted } = await apiResp.json();
+    expect(inserted).toBeGreaterThan(0);
 
-    // Activities show up on the client detail page.
+    const { count } = await admin().from("activities")
+      .select("id", { count: "exact", head: true }).eq("client_id", aliceId).eq("source", "strava-dev");
+    expect(count).toBe(inserted);
+
+    // Activities render as the distance / duration / avg-HR chart.
     await page.goto(`/clients/${aliceId}`);
-    await expect(page.getByTestId("activity-row")).toHaveCount(5, { timeout: 10000 });
+    await expect(page.locator(".recharts-line")).toHaveCount(3, { timeout: 15000 });
   });
 
   test("Send connect link button is rendered when STRAVA_CLIENT_ID is configured", async ({ page }) => {

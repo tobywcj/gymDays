@@ -13,6 +13,9 @@
     "db:push": "bash scripts/db-push.sh",
     "db:check": "/Users/toby/anaconda3/envs/gymDays/bin/python scripts/check-schema.py",
     "db:reset:local": "supabase/run-tests.sh",
+    "test:sql": "bash supabase/run-tests.sh --cloud",
+    "test:ai": "/Users/toby/anaconda3/envs/gymDays/bin/python -m pytest -c ai/pytest.ini --rootdir=. ai/tests",
+    "test:web": "cd web && PATH=/Users/toby/anaconda3/envs/gymDays/bin:$PATH npx playwright test",
     "db:link": "supabase link"
   }
 }

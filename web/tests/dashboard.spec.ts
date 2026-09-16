@@ -21,7 +21,8 @@ test.describe("Dashboard (visual contract + live data)", () => {
     }
   });
 
-  test("client table renders the seeded trainer's 2 clients", async ({ page }) => {
+  test("clients page renders the seeded trainer's 2 clients", async ({ page }) => {
+    await page.goto("/clients");
     const rows = page.getByTestId("client-row");
     await expect(rows).toHaveCount(2);
     await expect(rows.first()).toContainText(/Alice Adams|Aaron Avery/);
@@ -33,14 +34,9 @@ test.describe("Dashboard (visual contract + live data)", () => {
     await expect(page.getByTestId("agents-new")).toBeVisible();
   });
 
-  test("chart renders three line series", async ({ page }) => {
-    await page.waitForSelector(".recharts-line", { timeout: 10000 });
-    await expect(page.locator(".recharts-line")).toHaveCount(3);
-  });
-
-  test("body uses the earth-tone base background #1c2418", async ({ page }) => {
+  test("body uses the deep-space base background #15161a", async ({ page }) => {
     const color = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    expect(color).toBe("rgb(28, 36, 24)");
+    expect(color).toBe("rgb(21, 22, 26)");
   });
 
   test("glass primitive renders specular highlight and edge ring", async ({ page }) => {

@@ -145,7 +145,8 @@ test.describe("Screening questionnaire (PAR-Q → medical → CVD → signup)", 
     const link = await createInvite(await trainer.newPage(), clientName);
     await trainer.close();
 
-    const anon = await browser.newContext();
+    // Fresh visitor: no app_lang cookie (the config pins other specs to English).
+    const anon = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     const pub = await anon.newPage();
     await pub.goto(link);
 

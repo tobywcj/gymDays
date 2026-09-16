@@ -11,7 +11,7 @@ import pytest
 from unittest.mock import patch
 from ai.crew.tools.client import WriteClientProfile, WriteClientMemory
 from ai.crew.flows import onboarding_flow
-from tests.conftest import FIXTURE_TRANSCRIPT
+from ai.tests.conftest import FIXTURE_TRANSCRIPT
 
 
 # ── Unit tests: tools in isolation ───────────────────────────────────────────

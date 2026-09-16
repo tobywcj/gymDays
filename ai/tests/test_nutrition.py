@@ -1,15 +1,15 @@
 """M8 — Nutrition Agent tests.
 
 Strategy: mock httpx.get for Open Food Facts; let everything else hit the real
-cloud DB. Verify caching (no second HTTP call) + the written plan respects
-its own daily_targets within ±10%.
+cloud DB. Verify caching (no second HTTP call) + the agent's markdown advice is
+persisted to meal_plans as {type: "advice"} (one row per week, replaced on re-run).
 """
 from __future__ import annotations
 import json
 import pytest
 from unittest.mock import patch, MagicMock
 from ai.integrations.nutrition import lookup_food
-from ai.crew.tools.nutrition import LookupFood, WriteMealPlan, GetActiveProgram
+from ai.crew.tools.nutrition import LookupFood, WriteNutritionAdvice, GetActiveProgram
 from ai.crew.flows import weekly_nutrition_flow
 from ai.db import get_db
 
@@ -63,32 +63,32 @@ class TestLookupFoodCaching:
             assert mock_get.call_count == 1
 
 
-# ── Unit: WriteMealPlan ──────────────────────────────────────────────────────
+# ── Unit: WriteNutritionAdvice ───────────────────────────────────────────────
 
-class TestWriteMealPlan:
-    def test_writes_meal_plan_row(self, test_client_id, db):
-        tool = WriteMealPlan(run_client_id=test_client_id)
-        plan = {
-            "daily_targets": {"kcal": 2200, "protein_g": 150, "carbs_g": 250, "fat_g": 70},
-            "days": [
-                {"day": "Mon", "meals": [
-                    {"name": "Breakfast", "items": [
-                        {"food": "oats", "grams": 80, "kcal": 304, "protein_g": 11, "carbs_g": 56, "fat_g": 5},
-                    ], "kcal_total": 304}
-                ], "day_total": {"kcal": 2200, "protein_g": 150, "carbs_g": 250, "fat_g": 70}},
-            ],
-        }
-        msg = tool._run(client_id=test_client_id, plan=plan)
-        assert "written" in msg.lower()
+ADVICE = """## Goal Alignment
+- 🎯 Fuel fat loss while keeping protein high
+
+## What to Eat
+- 🥣 Rolled oats (379 kcal / 100g)
+"""
+
+
+class TestWriteNutritionAdvice:
+    def test_writes_advice_row_replacing_same_week(self, test_client_id, db):
+        tool = WriteNutritionAdvice(run_client_id=test_client_id)
+        tool._run(client_id=test_client_id, advice="old advice")
+        msg = tool._run(client_id=test_client_id, advice=ADVICE)
+        assert "saved" in msg.lower()
 
         rows = db.table("meal_plans").select("plan").eq("client_id", test_client_id).execute().data
-        assert len(rows) == 1
-        assert rows[0]["plan"]["daily_targets"]["kcal"] == 2200
+        assert len(rows) == 1, "re-running in the same week must replace, not append"
+        assert rows[0]["plan"]["type"] == "advice"
+        assert rows[0]["plan"]["advice"] == ADVICE
 
     def test_refuses_cross_client_access(self, test_client_id):
-        tool = WriteMealPlan(run_client_id=test_client_id)
+        tool = WriteNutritionAdvice(run_client_id=test_client_id)
         with pytest.raises(PermissionError, match="cross-client"):
-            tool._run(client_id="00000000-0000-0000-0000-000000000000", plan={})
+            tool._run(client_id="00000000-0000-0000-0000-000000000000", advice="x")
 
 
 class TestGetActiveProgram:
@@ -100,74 +100,31 @@ class TestGetActiveProgram:
 
 # ── Integration: full nutrition flow (LLM mocked, OFF mocked) ────────────────
 
-# Fixture foods + their per_100g values — used by both the agent script and the assertions.
 _FIXTURE_FOODS = {
     "test-rolled-oats":     {"kcal": 379, "protein": 13, "carbs": 68, "fat": 7},
     "test-chicken-breast":  {"kcal": 165, "protein": 31, "carbs": 0,  "fat": 4},
     "test-brown-rice":      {"kcal": 124, "protein": 3,  "carbs": 26, "fat": 1},
-    "test-olive-oil":       {"kcal": 884, "protein": 0,  "carbs": 0,  "fat": 100},
 }
 
 
-def _build_meal(food_key: str, grams: float) -> dict:
-    """Compute scaled macros for a given food + portion using fixture data."""
-    info = _FIXTURE_FOODS[food_key]
-    return {
-        "food":      food_key,
-        "grams":     grams,
-        "kcal":      round(info["kcal"]    * grams / 100, 1),
-        "protein_g": round(info["protein"] * grams / 100, 1),
-        "carbs_g":   round(info["carbs"]   * grams / 100, 1),
-        "fat_g":     round(info["fat"]     * grams / 100, 1),
-    }
-
-
-def _sum(items: list[dict], k: str) -> float:
-    return round(sum(i[k] for i in items), 1)
-
-
-def _make_nutrition_crew_result(client_id: str, targets: dict) -> str:
-    """Simulate an agent that calls lookup_food per item then writes a 7-day plan
-    where each day's totals match the daily targets within ±10%."""
-    from ai.crew.tools.nutrition import LookupFood
+def _simulate_agent(client_id: str) -> str:
+    """Stand-in for crew.kickoff(): look up each fixture food, then write advice
+    citing them — the same tool calls the real agent's workflow makes."""
     look = LookupFood()
+    lines = ["## What to Eat"]
     for q in _FIXTURE_FOODS:
-        look._run(query=q)  # populates the cache (each item makes one HTTP call)
-
-    # Build a deterministic 1-meal-per-day plan that hits the target.
-    # We solve for breakfast: oats + chicken + rice + olive oil → land near target.
-    # Hand-computed numbers below sum to ~target.
-    items = [
-        _build_meal("test-rolled-oats",    100),    # 379 kcal
-        _build_meal("test-chicken-breast", 200),    # 330
-        _build_meal("test-brown-rice",     400),    # 496
-        _build_meal("test-olive-oil",      100),    # 884
-    ]
-    # Day total: ~2089 kcal. We'll set targets to 2200 → within 10%.
-    day_total = {
-        "kcal":      _sum(items, "kcal"),
-        "protein_g": _sum(items, "protein_g"),
-        "carbs_g":   _sum(items, "carbs_g"),
-        "fat_g":     _sum(items, "fat_g"),
-    }
-    meal = {"name": "All meals", "items": items, "kcal_total": day_total["kcal"]}
-    days = [{"day": d, "meals": [meal], "day_total": day_total}
-            for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]]
-
-    plan = {"daily_targets": targets, "days": days}
-    WriteMealPlan(run_client_id=client_id)._run(client_id=client_id, plan=plan)
-    return json.dumps(plan)
+        food = json.loads(look._run(query=q))
+        lines.append(f"- {q}: {food['per_100g']['kcal']} kcal / 100g")
+    WriteNutritionAdvice(run_client_id=client_id)._run(client_id=client_id, advice="\n".join(lines))
+    return "Nutrition advice saved."
 
 
 class TestNutritionFlow:
-    def test_meal_plan_within_10pct_of_daily_target_and_cache_avoids_second_call(self, test_client_id, db):
-        targets = {"kcal": 2200, "protein_g": 150, "carbs_g": 250, "fat_g": 70}
-
+    def test_advice_persisted_and_cache_avoids_second_off_call(self, test_client_id, db):
         with patch("ai.integrations.nutrition.httpx.get") as mock_get, \
              patch("ai.crew.agents.make_llm", return_value="openai/gpt-4o-mini"), \
              patch("ai.crew.flows.Crew") as MockCrew:
 
-            # OFF stub — returns the right fixture for whichever query is asked.
             def stub_off(url, params=None, **kwargs):
                 query = (params or {}).get("search_terms", "")
                 food = _FIXTURE_FOODS.get(query)
@@ -180,35 +137,18 @@ class TestNutritionFlow:
                 )
                 return m
             mock_get.side_effect = stub_off
+            MockCrew.return_value.kickoff.side_effect = lambda: _simulate_agent(test_client_id)
 
-            instance = MockCrew.return_value
-            instance.kickoff.side_effect = lambda: _make_nutrition_crew_result(test_client_id, targets)
-
-            # First run — populates food_cache for 4 items (4 HTTP calls).
-            weekly_nutrition_flow(client_id=test_client_id, targets=targets)
+            weekly_nutrition_flow(client_id=test_client_id)
             first_call_count = mock_get.call_count
-            assert first_call_count == len(_FIXTURE_FOODS), \
-                f"expected {len(_FIXTURE_FOODS)} OFF calls, got {first_call_count}"
+            assert first_call_count == len(_FIXTURE_FOODS)
 
-            # Re-run — every lookup_food now hits the cache; no new HTTP calls.
-            weekly_nutrition_flow(client_id=test_client_id, targets=targets)
+            # Re-run — every lookup_food is now served from food_cache.
+            weekly_nutrition_flow(client_id=test_client_id)
             assert mock_get.call_count == first_call_count, "cache should have prevented further HTTP calls"
 
-        # Latest meal plan persisted; every day_total within ±10% of daily_targets.
-        meal_plans = db.table("meal_plans").select("plan") \
-            .eq("client_id", test_client_id).execute().data
-        assert len(meal_plans) >= 1
-        plan = meal_plans[-1]["plan"]
-        assert "daily_targets" in plan and len(plan["days"]) == 7
-
-        kcal_target = plan["daily_targets"]["kcal"]
-        for day in plan["days"]:
-            assert abs(day["day_total"]["kcal"] - kcal_target) / kcal_target <= 0.10, \
-                f"day {day['day']} kcal {day['day_total']['kcal']} not within 10% of target {kcal_target}"
-
-        # Every food cited must have a food_cache row.
-        cited = {item["food"] for day in plan["days"] for meal in day["meals"] for item in meal["items"]}
-        cached = {r["external_id"] for r in db.table("food_cache").select("external_id")
-                  .in_("external_id", list(cited)).execute().data}
-        missing = cited - cached
-        assert not missing, f"foods not cached: {missing}"
+        rows = db.table("meal_plans").select("plan").eq("client_id", test_client_id).execute().data
+        assert len(rows) == 1
+        advice = rows[0]["plan"]["advice"]
+        for food, info in _FIXTURE_FOODS.items():
+            assert f"{food}: {info['kcal']}" in advice

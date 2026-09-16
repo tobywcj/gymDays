@@ -48,8 +48,9 @@ test.describe("M9 Progress flags surface on the dashboard", () => {
     await db.from("progress_reports").delete().eq("client_id", aliceId);
   });
 
-  test("flagged client renders Flagged badge on dashboard", async ({ page }) => {
+  test("flagged client renders Flagged badge on the clients table", async ({ page }) => {
     await signIn(page, TRAINER_A);
+    await page.goto("/clients");
     // Alice's row should now have the Flagged badge (red dot).
     const aliceRow = page.getByTestId("client-row").filter({ hasText: "Alice Adams" });
     await expect(aliceRow).toBeVisible();

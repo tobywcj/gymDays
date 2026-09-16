@@ -9,7 +9,7 @@ import pytest
 from ai.config import OPENAI_API_KEY, ANTHROPIC_API_KEY
 from ai.llm import make_llm
 from ai.crew.flows import onboarding_flow
-from tests.conftest import FIXTURE_TRANSCRIPT
+from ai.tests.conftest import FIXTURE_TRANSCRIPT
 
 
 pytestmark = pytest.mark.live

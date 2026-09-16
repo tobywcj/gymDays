@@ -177,6 +177,7 @@ export default function LoginPage() {
           <button
             type="button"
             onClick={() => setMode("magic")}
+            data-testid="mode-magic"
             style={{
               flex: 1,
               padding: "6px 10px",
@@ -192,6 +193,7 @@ export default function LoginPage() {
           <button
             type="button"
             onClick={() => setMode("password")}
+            data-testid="mode-password"
             style={{
               flex: 1,
               padding: "6px 10px",

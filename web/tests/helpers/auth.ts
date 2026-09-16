@@ -5,7 +5,8 @@ export const TRAINER_B = { email: "trainer-b@test.gymdays.local", password: "Tes
 
 export async function signIn(page: Page, who: { email: string; password: string }) {
   await page.goto("/login");
-  await page.getByRole("button", { name: "Password" }).click();
+  // By test id — the page defaults to 繁中, so button text isn't stable.
+  await page.getByTestId("mode-password").click();
   await page.getByTestId("email").fill(who.email);
   await page.getByTestId("password").fill(who.password);
   await Promise.all([

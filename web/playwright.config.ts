@@ -14,6 +14,14 @@ export default defineConfig({
     baseURL: "http://localhost:3478",
     trace: "off",
     viewport: { width: 1440, height: 900 },
+    // The app UI defaults to 繁中 (DEFAULT_LOCALE); specs assert English copy.
+    storageState: {
+      cookies: [{
+        name: "app_lang", value: "en", domain: "localhost", path: "/",
+        expires: -1, httpOnly: false, secure: false, sameSite: "Lax",
+      }],
+      origins: [],
+    },
   },
   webServer: {
     command: "npx next dev --port 3478",
