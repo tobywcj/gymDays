@@ -57,8 +57,45 @@ export async function getStravaAccess(
         expires_at:    new Date(refreshed.expires_at * 1000).toISOString(),
       }).eq("id", row.id);
     } catch (e) {
+      // Strava invalidates a refresh token once it has been rotated. If a
+      // concurrent caller (cron sync, webhook, the AI service's backfill) refreshed
+      // first and persisted the new pair, our copy is now stale — adopt theirs
+      // instead of wrongly telling the client to reconnect.
+      const { data: latest } = await admin
+        .from("integration_tokens")
+        .select("access_token, refresh_token, expires_at")
+        .eq("id", row.id)
+        .maybeSingle();
+      const latestExp = latest?.expires_at
+        ? Math.floor(new Date(latest.expires_at as string).getTime() / 1000)
+        : 0;
+      if (
+        latest &&
+        latest.refresh_token !== row.refresh_token &&
+        latestExp > Math.floor(Date.now() / 1000) + 60
+      ) {
+        return { ok: true, access: latest.access_token as string };
+      }
       return { ok: false, reason: "reconnect_required", detail: (e as Error).message };
     }
   }
   return { ok: true, access };
+}
+
+/**
+ * Forget a client's Strava link (tokens + athlete id). Used when the athlete
+ * revokes access on Strava — the stored tokens are dead, so keeping them would
+ * only make every sync fail with reconnect_required. Activities are kept.
+ */
+export async function clearStravaLink(
+  admin: ReturnType<typeof supabaseAdmin>,
+  clientId: string,
+): Promise<void> {
+  await admin.from("integration_tokens")
+    .delete()
+    .eq("client_id", clientId)
+    .eq("provider", "strava");
+  await admin.from("clients")
+    .update({ strava_athlete_id: null })
+    .eq("id", clientId);
 }

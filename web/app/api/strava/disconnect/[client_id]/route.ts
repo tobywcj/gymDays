@@ -4,6 +4,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { clearStravaLink } from "@/lib/strava-access";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ client_id: string }> }) {
   const { client_id } = await params;
@@ -20,13 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ cli
   const deleteActivities = body?.delete_activities === true;
 
   const admin = supabaseAdmin();
-  await admin.from("integration_tokens")
-    .delete()
-    .eq("client_id", client_id)
-    .eq("provider", "strava");
-  await admin.from("clients")
-    .update({ strava_athlete_id: null })
-    .eq("id", client_id);
+  await clearStravaLink(admin, client_id);
 
   let deletedActivities = 0;
   if (deleteActivities) {

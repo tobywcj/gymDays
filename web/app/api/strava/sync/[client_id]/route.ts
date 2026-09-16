@@ -20,6 +20,19 @@ function accessError(acc: Extract<StravaAccess, { ok: false }>) {
     : NextResponse.json({ error: "reconnect_required", detail: acc.detail }, { status: 409 });
 }
 
+// A failed Strava data call. 401 means the access token itself was revoked
+// (athlete deauthorized before the webhook reached us) → same 409 as a dead
+// refresh token. Anything else passes Strava's own status + body straight
+// through — it names the real cause (missing scope, inactive app, rate limit, …).
+async function stravaApiError(r: Response, clientId: string) {
+  const body = await r.text().catch(() => "");
+  console.error(`[strava sync] ${r.status} for client ${clientId}: ${body}`);
+  if (r.status === 401) {
+    return NextResponse.json({ error: "reconnect_required", detail: body }, { status: 409 });
+  }
+  return NextResponse.json({ error: "strava_api_failed", status: r.status, body }, { status: 502 });
+}
+
 async function getAfter(admin: ReturnType<typeof supabaseAdmin>, clientId: string) {
   const { data: latest } = await admin
     .from("activities")
@@ -57,13 +70,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cli
     const r = await fetch(`${ATHLETE_ACTIVITIES_URL}?per_page=100&page=${page}&after=${after}`, {
       headers: { Authorization: `Bearer ${access}` },
     });
-    if (!r.ok) {
-      const body = await r.text().catch(() => "");
-      console.error(`[strava sync] ${r.status} for client ${client_id}: ${body}`);
-      // Pass Strava's own status + response body straight through — it names the
-      // real cause (missing scope, inactive app, rate limit, …). No canned text.
-      return NextResponse.json({ error: "strava_api_failed", status: r.status, body }, { status: 502 });
-    }
+    if (!r.ok) return await stravaApiError(r, client_id);
     const list = (await r.json()) as StravaActivity[];
     detected += list.length;
     if (list.length < 100) break;
@@ -104,13 +111,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ cli
     const r = await fetch(`${ATHLETE_ACTIVITIES_URL}?per_page=100&page=${page}&after=${after}`, {
       headers: { Authorization: `Bearer ${access}` },
     });
-    if (!r.ok) {
-      const body = await r.text().catch(() => "");
-      console.error(`[strava sync] ${r.status} for client ${client_id}: ${body}`);
-      // Pass Strava's own status + response body straight through — it names the
-      // real cause (missing scope, inactive app, rate limit, …). No canned text.
-      return NextResponse.json({ error: "strava_api_failed", status: r.status, body }, { status: 502 });
-    }
+    if (!r.ok) return await stravaApiError(r, client_id);
     const list = (await r.json()) as StravaActivity[];
     if (list.length === 0) break;
 

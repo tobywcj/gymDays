@@ -45,10 +45,13 @@ def exchange_code(code: str) -> dict[str, Any]:
     return r.json()
 
 
-def refresh_token(refresh_token: str) -> dict[str, Any]:
+def refresh_token(refresh_token: str, client_secret: str | None = None) -> dict[str, Any]:
+    """Refresh an access token. `client_secret` overrides the .env secret — pass
+    the trainer's UI-managed STRAVA_CLIENT_SECRET (trainer_secrets) so an in-app
+    rotation works here too, matching web/lib/strava-access.ts."""
     r = httpx.post(TOKEN_URL, data={
         "client_id":     STRAVA_CLIENT_ID,
-        "client_secret": STRAVA_CLIENT_SECRET,
+        "client_secret": client_secret or STRAVA_CLIENT_SECRET,
         "grant_type":    "refresh_token",
         "refresh_token": refresh_token,
     }, timeout=15)
@@ -56,21 +59,37 @@ def refresh_token(refresh_token: str) -> dict[str, Any]:
     return r.json()
 
 
-def ensure_fresh_token(token_row: dict[str, Any]) -> str:
-    """Return a non-expired access_token, refreshing in the DB if needed."""
-    expires_at = token_row.get("expires_at")
-    # `expires_at` may be a timestamp (int) or ISO string depending on insert path.
+def _ts(expires_at: Any) -> int:
+    """`expires_at` may be a timestamp (int) or ISO string depending on insert path."""
     if isinstance(expires_at, str):
         from datetime import datetime
-        exp_ts = int(datetime.fromisoformat(expires_at.replace("Z", "+00:00")).timestamp())
-    else:
-        exp_ts = int(expires_at or 0)
+        return int(datetime.fromisoformat(expires_at.replace("Z", "+00:00")).timestamp())
+    return int(expires_at or 0)
 
+
+def ensure_fresh_token(token_row: dict[str, Any]) -> str:
+    """Return a non-expired access_token, refreshing in the DB if needed."""
+    exp_ts = _ts(token_row.get("expires_at"))
     if exp_ts and exp_ts > time.time() + 60:
         return token_row["access_token"]
 
-    refreshed = refresh_token(token_row["refresh_token"])
+    from ai.secrets import get_trainer_secrets
+
     db = get_db()
+    secret = get_trainer_secrets(token_row.get("trainer_id")).get("STRAVA_CLIENT_SECRET")
+    try:
+        refreshed = refresh_token(token_row["refresh_token"], secret)
+    except httpx.HTTPStatusError:
+        # Strava invalidates a refresh token once rotated. If the web app (sync,
+        # webhook) refreshed concurrently and persisted the new pair, adopt it
+        # rather than failing; otherwise the token is genuinely dead.
+        latest = db.table("integration_tokens") \
+            .select("access_token, refresh_token, expires_at") \
+            .eq("id", token_row["id"]).limit(1).execute().data
+        if latest and latest[0]["refresh_token"] != token_row["refresh_token"] \
+                and _ts(latest[0].get("expires_at")) > time.time() + 60:
+            return latest[0]["access_token"]
+        raise
     db.table("integration_tokens").update({
         "access_token":  refreshed["access_token"],
         "refresh_token": refreshed["refresh_token"],
@@ -134,7 +153,7 @@ def find_client_by_athlete_id(athlete_id: int | str) -> Optional[dict[str, Any]]
 def find_token_for_client(client_id: str) -> Optional[dict[str, Any]]:
     db = get_db()
     resp = db.table("integration_tokens") \
-        .select("id, access_token, refresh_token, expires_at") \
+        .select("id, trainer_id, access_token, refresh_token, expires_at") \
         .eq("client_id", client_id) \
         .eq("provider", "strava") \
         .limit(1).execute()

@@ -53,9 +53,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ cli
         if (!r.ok) {
           const body = await r.text().catch(() => "");
           console.error(`[strava full-sync] ${r.status} for client ${client_id}: ${body}`);
-          // Pass Strava's own status + response body straight through — it names
-          // the real cause (missing scope, inactive app, rate limit, …).
-          send({ error: `strava_api_failed: ${r.status}`, detail: body });
+          // 401 = access token revoked → reconnect. Otherwise pass Strava's own
+          // status + body straight through — it names the real cause (missing
+          // scope, inactive app, rate limit, …).
+          send({
+            error: r.status === 401 ? "reconnect_required" : `strava_api_failed: ${r.status}`,
+            detail: body,
+          });
           controller.close();
           return;
         }
