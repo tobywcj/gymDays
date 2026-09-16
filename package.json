@@ -11,6 +11,7 @@
   },
   "scripts": {
     "db:push": "bash scripts/db-push.sh",
+    "db:check": "/Users/toby/anaconda3/envs/gymDays/bin/python scripts/check-schema.py",
     "db:reset:local": "supabase/run-tests.sh",
     "db:link": "supabase link"
   }
