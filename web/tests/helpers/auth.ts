@@ -1,16 +1,16 @@
 import type { Page } from "@playwright/test";
 
-// The fixture password is supplied by the environment, not committed — the seed
-// script creates these accounts in a real Supabase project, so a literal here
-// would be a working password for anyone reading the repo. Seed and test must
-// agree on it:
-//   export SEED_TEST_PASSWORD=...
-//   node web/scripts/seed-test-users.mjs && npx playwright test
+// The fixture password comes from the environment, never from source — the
+// seed script creates these accounts in a real Supabase project, so a literal
+// here would be a working password for anyone reading the repo.
+// playwright.config.ts loads SEED_TEST_PASSWORD out of the gitignored root
+// .env, and global-setup passes the same value to the seed script, so the two
+// always agree without anyone exporting anything.
 const PASSWORD = process.env.SEED_TEST_PASSWORD;
 if (!PASSWORD) {
   throw new Error(
-    "SEED_TEST_PASSWORD is not set. Export the same value you seeded the test " +
-      "trainers with (see web/scripts/seed-test-users.mjs).",
+    "SEED_TEST_PASSWORD is not set. Add it to the root .env (see .env.example); " +
+      "global-setup seeds the test trainers with that value.",
   );
 }
 

@@ -104,7 +104,17 @@ for (const t of fixtures) {
   console.log(`  + ${rows.length} clients for ${t.email}`);
 }
 
-console.log("\nDone. Test credentials:");
+// Never print the password: this script runs from Playwright's global-setup on
+// every test run, so anything logged here lands in terminal scrollback and CI
+// logs. The value lives in the gitignored root .env as SEED_TEST_PASSWORD.
+console.log("\nDone. Seeded trainers (password: $SEED_TEST_PASSWORD):");
 for (const t of fixtures) {
-  console.log(`  ${t.email}  /  ${t.password}`);
+  console.log(`  ${t.email}`);
+}
+if (!process.env.SEED_TEST_PASSWORD) {
+  console.log(
+    "\n  NOTE: SEED_TEST_PASSWORD was not set, so a random password was used\n" +
+      "  and is NOT recoverable. Set it in the root .env so the Playwright\n" +
+      "  suite can sign in, then re-run this script.",
+  );
 }

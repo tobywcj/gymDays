@@ -25,6 +25,7 @@ Copy `.env.example` → `.env` and `web/.env.local.example` → `web/.env.local`
 | --- | --- | --- |
 | `CRON_SECRET` | scheduled agents, Strava sync | `openssl rand -hex 32`. Unset ⇒ `/api/agents/scheduled/dispatch` and the Strava sync routes reject every call. pg_cron reads its copy from `app_config`, so mirror it: `update app_config set value = '<secret>' where key = 'cron_secret';` |
 | `STRAVA_VERIFY_TOKEN` | Strava webhook | Any random string; must match the webhook subscription. Unset ⇒ the verification handshake is refused. |
+| `SEED_TEST_PASSWORD` | Playwright suite | Password for the `@test.gymdays.local` fixture trainers. `global-setup` seeds them with it and the specs sign in with it, so both agree. Unset ⇒ the seed script invents an unrecoverable one and the specs fail. |
 
 ### Database
 
@@ -45,8 +46,7 @@ npm run db:check    # verify every table/column/function the migrations create e
 npm run test:ai
 
 # Web — Playwright; boots `next dev` on :3478 and reseeds the test trainers.
-# Needs SEED_TEST_PASSWORD set (seed script and tests share it; no committed default).
-export SEED_TEST_PASSWORD="$(openssl rand -base64 18)"
+# playwright.config.ts loads web/.env.local + the root .env, so nothing needs exporting.
 npm run test:web
 
 # SQL RLS

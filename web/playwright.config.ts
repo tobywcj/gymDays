@@ -1,4 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
+import { loadEnv } from "./tests/helpers/load-env";
+
+// Playwright evaluates this config in the main process and in each worker, so
+// loading here means specs and helpers get the gitignored env values with no
+// manual exporting.
+loadEnv();
 
 export default defineConfig({
   testDir: "./tests",
