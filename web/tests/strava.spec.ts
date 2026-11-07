@@ -53,11 +53,26 @@ test.describe("M6 Strava ingest", () => {
   });
 
   test("webhook verification handshake returns the challenge", async () => {
+    // Read the token rather than hardcoding it — it is a real secret in any
+    // deployed environment, and the route has no default to fall back on.
+    const verifyToken = process.env.STRAVA_VERIFY_TOKEN;
+    test.skip(!verifyToken, "STRAVA_VERIFY_TOKEN not set");
     const ctx = await request.newContext();
-    const r = await ctx.get("http://localhost:3478/api/strava/webhook?hub.mode=subscribe&hub.verify_token=gymdays-verify&hub.challenge=abc123");
+    const r = await ctx.get(
+      "http://localhost:3478/api/strava/webhook?hub.mode=subscribe" +
+        `&hub.verify_token=${encodeURIComponent(verifyToken!)}&hub.challenge=abc123`,
+    );
     expect(r.status()).toBe(200);
     const body = await r.json();
     expect(body["hub.challenge"]).toBe("abc123");
+  });
+
+  test("webhook verification is refused with a wrong token", async () => {
+    const ctx = await request.newContext();
+    const r = await ctx.get(
+      "http://localhost:3478/api/strava/webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=abc123",
+    );
+    expect(r.status()).toBe(403);
   });
 
   test("webhook delete event drops the matching row", async () => {

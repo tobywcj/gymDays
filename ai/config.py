@@ -75,4 +75,4 @@ EMBED_DIMENSION: int = int(_get("EMBED_DIMENSION", "1536"))
 # ── Strava ───────────────────────────────────────────────────────────────────
 STRAVA_CLIENT_ID:     str = _get("STRAVA_CLIENT_ID")
 STRAVA_CLIENT_SECRET: str = _get("STRAVA_CLIENT_SECRET")
-STRAVA_VERIFY_TOKEN:  str = _get("STRAVA_VERIFY_TOKEN", "gymdays-verify")
+STRAVA_VERIFY_TOKEN:  str = _get("STRAVA_VERIFY_TOKEN")

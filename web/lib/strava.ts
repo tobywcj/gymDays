@@ -8,7 +8,7 @@ const STREAMS_URL  = (id: string | number) => `https://www.strava.com/api/v3/act
 
 export const STRAVA_CLIENT_ID     = process.env.STRAVA_CLIENT_ID || "";
 export const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET || "";
-export const STRAVA_VERIFY_TOKEN  = process.env.STRAVA_VERIFY_TOKEN || "gymdays-verify";
+export const STRAVA_VERIFY_TOKEN  = process.env.STRAVA_VERIFY_TOKEN || "";
 
 // Scope we need: `activity:read_all` lets us pull the athlete's activities.
 // Without it the connection still yields a token + athlete id (so the client

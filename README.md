@@ -19,6 +19,13 @@ cd web && npm install && npm run dev
 
 Env is split: root `.env` feeds the AI service and scripts; `web/.env.local` feeds Next.js. Most API keys (LLM providers, Strava secret) can instead be entered per trainer at **`/api-keys`**, and Telegram at **`/connections`** — env values are only the fallback.
 
+Copy `.env.example` → `.env` and `web/.env.local.example` → `web/.env.local`; both real files are gitignored. Two values have no default and fail closed when unset:
+
+| Var | Needed for | Notes |
+| --- | --- | --- |
+| `CRON_SECRET` | scheduled agents, Strava sync | `openssl rand -hex 32`. Unset ⇒ `/api/agents/scheduled/dispatch` and the Strava sync routes reject every call. pg_cron reads its copy from `app_config`, so mirror it: `update app_config set value = '<secret>' where key = 'cron_secret';` |
+| `STRAVA_VERIFY_TOKEN` | Strava webhook | Any random string; must match the webhook subscription. Unset ⇒ the verification handshake is refused. |
+
 ### Database
 
 The cloud Supabase project is the source of truth. Migrations live in `supabase/migrations/` (`0001`–`0051`).
@@ -37,7 +44,9 @@ npm run db:check    # verify every table/column/function the migrations create e
 # shadow stdlib `secrets`). Append `-- -m live` for opt-in tests that call real LLM APIs.
 npm run test:ai
 
-# Web — Playwright; boots `next dev` on :3478 and reseeds the test trainers
+# Web — Playwright; boots `next dev` on :3478 and reseeds the test trainers.
+# Needs SEED_TEST_PASSWORD set (seed script and tests share it; no committed default).
+export SEED_TEST_PASSWORD="$(openssl rand -base64 18)"
 npm run test:web
 
 # SQL RLS

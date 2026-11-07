@@ -7,13 +7,13 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { normalizeActivity } from "@/lib/strava";
 import { getStravaAccess } from "@/lib/strava-access";
 import type { StravaActivity } from "@/lib/strava";
+import { cronSecretMatches } from "@/lib/cron-secret";
 
 const ATHLETE_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ client_id: string }> }) {
   const { client_id } = await params;
-  const cronSecret = process.env.CRON_SECRET ?? "dev-secret";
-  const isInternal = req.headers.get("x-internal-secret") === cronSecret;
+  const isInternal = cronSecretMatches(req.headers.get("x-internal-secret"));
 
   if (!isInternal) {
     const supabase = await supabaseServer();

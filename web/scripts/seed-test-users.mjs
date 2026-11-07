@@ -5,6 +5,7 @@
 //   node web/scripts/seed-test-users.mjs
 
 import { createClient } from "@supabase/supabase-js";
+import { randomBytes } from "node:crypto";
 import ws from "ws";
 // Node 20 lacks native WebSocket; provide one for realtime-js init (we don't actually use realtime here).
 globalThis.WebSocket = globalThis.WebSocket ?? ws;
@@ -20,10 +21,18 @@ const supabase = createClient(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+// Fixture passwords are generated per run, never committed. These accounts are
+// created in whichever Supabase project the env vars point at — a literal here
+// would be a working password for anyone reading the repo. Set
+// SEED_TEST_PASSWORD to pin one for a test suite that needs a stable login.
+function testPassword() {
+  return process.env.SEED_TEST_PASSWORD ?? `Seed!${randomBytes(12).toString("base64url")}`;
+}
+
 const fixtures = [
   {
     email: "trainer-a@test.gymdays.local",
-    password: "TestTrainerA!2026",
+    password: testPassword(),
     full_name: "Trainer A",
     clients: [
       { name: "Alice Adams", goal: "Fat Loss",     status: "Active",  strava: true  },
@@ -32,7 +41,7 @@ const fixtures = [
   },
   {
     email: "trainer-b@test.gymdays.local",
-    password: "TestTrainerB!2026",
+    password: testPassword(),
     full_name: "Trainer B",
     clients: [
       { name: "Bella Briggs", goal: "Marathon",        status: "Resting", strava: true  },

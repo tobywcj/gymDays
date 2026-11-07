@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { runMessagingFlow, type FlowName } from "@/lib/ai-service";
 import { computeNextRun, type Frequency } from "@/lib/schedule";
+import { cronSecretMatches } from "@/lib/cron-secret";
 
 type ScheduleRow = {
   id: string;
@@ -23,8 +24,7 @@ type ScheduleRow = {
 };
 
 export async function POST(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET ?? "dev-secret";
-  if (req.headers.get("x-cron-secret") !== cronSecret) {
+  if (!cronSecretMatches(req.headers.get("x-cron-secret"))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

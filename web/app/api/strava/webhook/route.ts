@@ -15,7 +15,12 @@ import { triggerPostWorkoutAnalysis } from "@/lib/ai-service";
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
-  if (sp.get("hub.mode") === "subscribe" && sp.get("hub.verify_token") === STRAVA_VERIFY_TOKEN) {
+  // An unset STRAVA_VERIFY_TOKEN must not match an empty `hub.verify_token`.
+  if (
+    sp.get("hub.mode") === "subscribe" &&
+    STRAVA_VERIFY_TOKEN !== "" &&
+    sp.get("hub.verify_token") === STRAVA_VERIFY_TOKEN
+  ) {
     return NextResponse.json({ "hub.challenge": sp.get("hub.challenge") });
   }
   return NextResponse.json({ error: "invalid verification" }, { status: 403 });

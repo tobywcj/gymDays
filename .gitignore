@@ -2,9 +2,11 @@ node_modules/
 .next/
 out/
 dist/
+# Every .env variant is secret; only the committed *.example templates are not.
 .env
-.env.local
-.env*.local
+.env.*
+!.env.example
+!.env*.example
 *.log
 .DS_Store
 .idea/

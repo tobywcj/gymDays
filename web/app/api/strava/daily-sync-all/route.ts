@@ -2,10 +2,10 @@
 // Called by pg_cron at midnight; protected by CRON_SECRET header.
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { cronSecret, cronSecretMatches } from "@/lib/cron-secret";
 
 export async function POST(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET ?? "dev-secret";
-  if (req.headers.get("x-cron-secret") !== cronSecret) {
+  if (!cronSecretMatches(req.headers.get("x-cron-secret"))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     try {
       const r = await fetch(`${origin}/api/strava/sync/${client_id}`, {
         method: "POST",
-        headers: { "x-internal-secret": cronSecret },
+        headers: { "x-internal-secret": cronSecret() },
       });
       if (!r.ok) {
         results.push({ client_id, error: `${r.status}` });
