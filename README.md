@@ -2,6 +2,109 @@
 
 AI-powered client management webapp for personal trainers — a CrewAI agent crew (planner, nutrition, progress, messaging, concierge, exercise coach), Strava ingestion, Telegram messaging, per-client AI memory, clinical pre-training screening, a trainer knowledge base (RAG), and a client portal.
 
+<p align="center">
+  <img src="docs/media/dashboard.png" alt="Gym Days trainer dashboard — roster metrics, pending invites and the training calendar" width="900">
+</p>
+
+<p align="center"><i>Quiet clients, unresolved injuries and change requests waiting on you — each card names the clients behind the number. Below it, every client's sessions on one calendar.</i></p>
+
+## A look around
+
+Everything below is the running app against a seeded demo roster — six fictional clients, no real client data. `npm run showcase` rebuilds every image and clip from scratch.
+
+### Agents reason over that client's own data, out loud
+
+Every run streams its thinking, the sources it pulled and the citations behind the result. The Progress review below is written from this client's InBody history, her synced activity and the trainer's own note on the last session.
+
+<img src="docs/media/clip-progress-agent.gif" alt="The Progress agent streaming its reasoning, then writing a review with flags" width="820">
+
+### A week's programme, written against the last session
+
+The Planner builds the week from the client's recent journey, body status and screening. You edit it, or push a day straight into the session builder.
+
+<img src="docs/media/weekly-program.png" alt="A generated weekly programme with sets, reps and coaching notes" width="820">
+
+### Screening that gates training, not just a form
+
+PAR-Q, CVD risk factors and medical history arrive through a public questionnaire. Flags block loaded training until written clearance is recorded — and the agents respect the block when they program.
+
+<img src="docs/media/clearance-gate.png" alt="Pre-training screening with PAR-Q flags and training blocked pending clearance" width="820">
+
+### The exercise library re-scores itself per client
+
+Pick a client and the whole AASFP library re-ranks against their injuries, clearance and AFT level, with the reasoning behind every caveat.
+
+<img src="docs/media/clip-library.gif" alt="Choosing a client re-scores every exercise card against their injuries" width="820">
+
+### Your own evidence base, not the model's
+
+Upload the manuals and papers you actually coach from. They're chunked, auto-tagged to the agents that should see them, and cited in the output.
+
+<img src="docs/media/knowledge-base.png" alt="Knowledge base with per-agent retrieval memory and citations" width="820">
+
+### Strava and InBody in, trends out
+
+Activities sync from Strava with HR-zone breakdowns and training-load splits. InBody and BIA panels go in as photos and come out as a tracked history.
+
+<img src="docs/media/strava-activity.png" alt="Strava activity trends with training load and consistency" width="820">
+<img src="docs/media/body-composition.png" alt="Body-composition history from InBody readings" width="820">
+
+### A portal that explains the plan to the client
+
+Clients see their programme, request changes, and grow a personalised mind-map of their own training — each branch written from their real data.
+
+<img src="docs/media/clip-insight-tree.gif" alt="A client expanding their health insight tree in the portal" width="820">
+<img src="docs/media/portal-insights.png" alt="A grown insight branch with the personalised insight written underneath" width="820">
+
+### Messaging in your voice, on a schedule
+
+Drafts go out over Telegram and clients reply to the concierge agent. Reminders and weekly check-ins run on trainer-defined schedules via pg_cron.
+
+<img src="docs/media/messaging.png" alt="Telegram conversation between trainer, agent and client" width="820">
+<img src="docs/media/scheduled-agents.png" alt="Trainer-defined scheduled agents" width="820">
+
+### Bilingual throughout
+
+The whole UI toggles 繁中 / EN, independently of the language each client's AI output is written in.
+
+<img src="docs/media/dashboard-zh.png" alt="The dashboard in Traditional Chinese" width="820">
+
+<details>
+<summary><b>More screens</b></summary>
+
+| | |
+|---|---|
+| <img src="docs/media/login.png" alt="Sign-in" width="400"> | <img src="docs/media/clients.png" alt="Client roster" width="400"> |
+| Sign-in — walk the stick figure through the gym with ← → | The roster |
+| <img src="docs/media/screening-questionnaire.png" alt="Public screening questionnaire" width="400"> | <img src="docs/media/first-lesson.png" alt="First-lesson checklist" width="400"> |
+| Public screening questionnaire | First-lesson assessment battery, designed by the Planner |
+| <img src="docs/media/injury-log.png" alt="Injury trail" width="400"> | <img src="docs/media/agent-sources.png" alt="Per-agent data source toggles" width="400"> |
+| Append-only injury trail | Per-agent, per-client data-source toggles |
+| <img src="docs/media/client-overview.png" alt="Client record" width="400"> | <img src="docs/media/screening.png" alt="A cleared screening" width="400"> |
+| A client record, top to bottom | A screening that cleared — compare with the blocked one above |
+| <img src="docs/media/progress-agent.png" alt="A finished progress review" width="400"> | <img src="docs/media/portal-insights.png" alt="Client insight tree" width="400"> |
+| The Progress review once it lands | The client's insight tree |
+| <img src="docs/media/nutrition-agent.png" alt="Nutrition advice" width="400"> | <img src="docs/media/exercise-library.png" alt="Exercise library" width="400"> |
+| Nutrition agent | AFT-levelled exercise library |
+| <img src="docs/media/portal.png" alt="Client portal home" width="400"> | <img src="docs/media/portal-programme.png" alt="Client portal programme" width="400"> |
+| Client portal | The client's own programme view |
+| <img src="docs/media/connections.png" alt="Messaging connections" width="400"> | <img src="docs/media/api-keys.png" alt="Bring-your-own API keys" width="400"> |
+| Messaging providers | Bring-your-own API keys |
+
+Whole-page captures: [client record](docs/media/client-full.png) · [exercise library](docs/media/exercise-library-full.png) · [client portal](docs/media/portal-full.png)
+
+</details>
+
+### Rebuilding these
+
+```bash
+npm run seed:demo             # fictional showcase roster (idempotent)
+npm run showcase              # seed, then capture every image and clip into docs/media/
+npm run showcase -- --no-clips --only=dashboard,knowledge
+```
+
+`web/scripts/capture-showcase.mjs` drives the real app with Playwright and converts the recordings with ffmpeg; the clips make live agent calls, so `--no-clips` keeps a run free. The demo accounts live under `@demo.gymdays.local` and are created with `SEED_DEMO_PASSWORD` (or `SEED_TEST_PASSWORD`) from the root `.env`. They are a separate roster from the thin `@test.gymdays.local` trainers the Playwright suite asserts against.
+
 ## Setup
 
 All code runs inside the `gymDays` conda env.
