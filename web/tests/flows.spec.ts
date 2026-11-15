@@ -28,9 +28,12 @@ test.describe("Scheduled agents (auto-messaging)", () => {
     await page.getByTestId("agent-time").fill("09:30");
     await page.getByTestId("agent-submit").click();
 
-    // It should appear as a row.
+    // It should appear as a row. The 5s expect default is too tight here: the
+    // POST handler compiles on first hit under `next dev` and then makes a
+    // round trip to cloud Supabase, which together outrun it on a cold server.
+    // Same reasoning as the 15s wait in strava.spec.ts.
     const row = page.getByTestId("agent-schedule-row").filter({ hasText: name });
-    await expect(row).toBeVisible();
+    await expect(row).toBeVisible({ timeout: 15000 });
 
     // It was persisted for the trainer.
     const { data } = await db.from("scheduled_agents").select("id, flow, target_all").eq("name", name).single();
@@ -40,7 +43,7 @@ test.describe("Scheduled agents (auto-messaging)", () => {
     // Delete via the UI (auto-accept the confirm dialog).
     page.on("dialog", (d) => d.accept());
     await row.getByTestId("agent-delete").click();
-    await expect(row).toHaveCount(0);
+    await expect(row).toHaveCount(0, { timeout: 15000 });
 
     // Cleanup any stragglers.
     await db.from("scheduled_agents").delete().eq("name", name);

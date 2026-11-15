@@ -37,6 +37,9 @@ export default function ScheduledAgents({ clients }: { clients: ClientLite[] }) 
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
+  // Initial load only. Every mutation below returns the row it changed, so the
+  // list is kept in step from those responses rather than by refetching the
+  // whole collection — which doubled the wait before a change showed up.
   async function refresh() {
     try {
       const r = await fetch("/api/agents/scheduled", { cache: "no-store" });
@@ -48,9 +51,28 @@ export default function ScheduledAgents({ clients }: { clients: ClientLite[] }) 
   }
   useEffect(() => { refresh(); }, []);
 
+  /** Replace one row in place, keeping the server's ordering. */
+  const replace = (s: Schedule) =>
+    setSchedules((prev) => (prev ?? []).map((x) => (x.id === s.id ? s : x)));
+
+  /**
+   * Add a newly created row at the top (the list is created_at desc), replacing
+   * any copy already there. The initial GET can still be in flight when the
+   * create commits, in which case its response already carries the new row — a
+   * plain prepend would then show it twice.
+   */
+  const upsertNewest = (s: Schedule) =>
+    setSchedules((prev) => [s, ...(prev ?? []).filter((x) => x.id !== s.id)]);
+
   const clientName = useMemo(() => new Map(clients.map((c) => [c.id, c.name])), [clients]);
 
+  // Pause/resume and delete apply to the list straight away and roll back if
+  // the request fails. Waiting on the round trip first meant several seconds of
+  // a row sitting there looking like the click missed.
   async function toggle(s: Schedule) {
+    const before = schedules;
+    setErr(null);
+    replace({ ...s, enabled: !s.enabled });
     try {
       const r = await fetch(`/api/agents/scheduled/${s.id}`, {
         method: "PATCH",
@@ -58,19 +80,24 @@ export default function ScheduledAgents({ clients }: { clients: ClientLite[] }) 
         body: JSON.stringify({ enabled: !s.enabled }),
       });
       if (!r.ok) throw new Error(await r.text());
-      refresh();
+      // The server also recomputes next_run_at on resume, so take its version.
+      replace((await r.json()).schedule as Schedule);
     } catch (e) {
+      setSchedules(before);
       setErr((e as Error).message);
     }
   }
 
   async function remove(s: Schedule) {
     if (!confirm(t("agents.deleteConfirm"))) return;
+    const before = schedules;
+    setErr(null);
+    setSchedules((prev) => (prev ?? []).filter((x) => x.id !== s.id));
     try {
       const r = await fetch(`/api/agents/scheduled/${s.id}`, { method: "DELETE" });
       if (!r.ok) throw new Error(await r.text());
-      refresh();
     } catch (e) {
+      setSchedules(before);
       setErr((e as Error).message);
     }
   }
@@ -135,7 +162,10 @@ export default function ScheduledAgents({ clients }: { clients: ClientLite[] }) 
       {open && (
         <CreateForm
           clients={clients}
-          onCreated={() => { setOpen(false); refresh(); }}
+          onCreated={(created) => {
+            setOpen(false);
+            upsertNewest(created);
+          }}
         />
       )}
 
@@ -215,7 +245,7 @@ export default function ScheduledAgents({ clients }: { clients: ClientLite[] }) 
   );
 }
 
-function CreateForm({ clients, onCreated }: { clients: ClientLite[]; onCreated: () => void }) {
+function CreateForm({ clients, onCreated }: { clients: ClientLite[]; onCreated: (created: Schedule) => void }) {
   const { t } = useI18n();
   const [name, setName] = useState("");
   const [flow, setFlow] = useState<Flow>("daily-reminder");
@@ -258,7 +288,7 @@ function CreateForm({ clients, onCreated }: { clients: ClientLite[]; onCreated: 
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `${r.status}`);
-      onCreated();
+      onCreated(j.schedule as Schedule);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
